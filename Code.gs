@@ -1,157 +1,190 @@
 /**
  * One Piece Card Tracker API Backend
  */
-const SHEET_NAME = 'Sheet1'; // หรือชื่อแท็บที่ใช้งาน
-const DATA_START_ROW = 8;   // ปรับเป็นแถวที่ 8 (เพราะแถวที่ 7 คือหัวตารางภาษาไทย)
+const SHEET_NAME = 'Sheet1';
+const DATA_START_ROW = 8;
+const START_COLUMN = 2; // Column B (Column A is reserved spacer in template)
+const NUM_COLUMNS = 11; // Columns B to L (Image, Name, Set, Rarity, Status, BuyDate, BuyPrice, SellDate, SellPrice, Profit, ROI)
 
 function doGet(e) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getActiveSheet();
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.getActiveSheet();
     const lastRow = sheet.getLastRow();
     
-    // ดึงค่าสรุป KPI ด้านบน (แถวที่ 4)
-    const totalCards = sheet.getRange("B4").getValue() || sheet.getRange("A4").getValue() || 0;
-    const totalCost = sheet.getRange("D4").getValue() || sheet.getRange("C4").getValue() || 0;
-    const totalSales = sheet.getRange("F4").getValue() || sheet.getRange("E4").getValue() || 0;
-    const netProfit = sheet.getRange("H4").getValue() || sheet.getRange("G4").getValue() || 0;
+    const totalCards = sheet.getRange("B4").getValue() || 0;
+    const totalCost = sheet.getRange("D4").getValue() || 0;
+    const totalSales = sheet.getRange("F4").getValue() || 0;
+    const netProfit = sheet.getRange("H4").getValue() || 0;
     
-    const cards = [];
+    const cardCollection = [];
     if (lastRow >= DATA_START_ROW) {
-      const data = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 11).getValues();
-      const formulas = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 1).getFormulas();
-      for (let i = 0; i < data.length; i++) {
-        const row = data[i];
-        if (!row[1]) continue; // ถ้าไม่มีชื่อการ์ดให้ข้าม
+      const rowValues = sheet.getRange(DATA_START_ROW, START_COLUMN, lastRow - DATA_START_ROW + 1, NUM_COLUMNS).getValues();
+      const formulaValues = sheet.getRange(DATA_START_ROW, START_COLUMN, lastRow - DATA_START_ROW + 1, 1).getFormulas();
+      
+      for (let rowIndex = 0; rowIndex < rowValues.length; rowIndex++) {
+        const rowCells = rowValues[rowIndex];
+        const cardTitle = String(rowCells[1] || '').trim();
+        if (!cardTitle || cardTitle === 'ชื่อการ์ด' || cardTitle === 'รูปภาพหน้าการ์ด') continue;
         
-        let img = '';
-        if (formulas[i] && formulas[i][0]) {
-          const m = formulas[i][0].match(/=IMAGE\("([^"]+)"\)/i);
-          if (m) img = m[1];
+        let cardImageUrl = '';
+        if (formulaValues[rowIndex] && formulaValues[rowIndex][0]) {
+          const formulaMatch = formulaValues[rowIndex][0].match(/=IMAGE\("([^"]+)"\)/i);
+          if (formulaMatch) cardImageUrl = formulaMatch[1];
         }
-        if (!img && row[0]) {
-          img = String(row[0]);
-        }
-        
-        // แปลง Google Drive view link เป็น direct thumbnail image URL
-        if (img.includes('drive.google.com/file/d/')) {
-          const fileId = img.split('/d/')[1].split('/')[0];
-          img = `https://lh3.googleusercontent.com/d/${fileId}`;
+        if (!cardImageUrl && rowCells[0]) {
+          cardImageUrl = String(rowCells[0]);
         }
         
-        cards.push({
-          rowId: DATA_START_ROW + i,
-          imageUrl: img,
-          cardName: String(row[1] || ''),
-          cardSet: String(row[2] || ''),
-          rarityCondition: String(row[3] || ''),
-          status: String(row[4] || 'มีในสต็อก'),
-          buyDate: formatDate(row[5]),
-          buyPrice: Number(row[6]) || 0,
-          sellDate: formatDate(row[7]),
-          sellPrice: Number(row[8]) || 0,
-          profit: Number(row[9]) || 0,
-          roi: String(row[10] || '0%')
+        if (cardImageUrl.includes('drive.google.com/file/d/')) {
+          const driveFileId = cardImageUrl.split('/d/')[1].split('/')[0];
+          cardImageUrl = `https://lh3.googleusercontent.com/d/${driveFileId}`;
+        }
+        
+        cardCollection.push({
+          rowId: DATA_START_ROW + rowIndex,
+          imageUrl: cardImageUrl,
+          cardName: cardTitle,
+          cardSet: String(rowCells[2] || ''),
+          rarityCondition: String(rowCells[3] || ''),
+          status: String(rowCells[4] || 'มีในสต็อก'),
+          buyDate: formatDate(rowCells[5]),
+          buyPrice: Number(rowCells[6]) || 0,
+          sellDate: formatDate(rowCells[7]),
+          sellPrice: Number(rowCells[8]) || 0,
+          profit: Number(rowCells[9]) || 0,
+          roi: String(rowCells[10] || '0%')
         });
       }
     }
 
-    return responseJSON({
+    return respondJson({
       success: true,
       summary: { totalCards, totalCost, totalSales, netProfit },
-      cards: cards
+      cards: cardCollection
     });
-  } catch (error) {
-    return responseJSON({ success: false, message: error.toString() });
+  } catch (caughtError) {
+    return respondJson({ success: false, message: caughtError.toString() });
   }
 }
 
 function doPost(e) {
   try {
-    const postData = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(SHEET_NAME) || ss.getActiveSheet();
-    
-    const action = postData.action || 'add';
+    const postBody = JSON.parse(e.postData.contents);
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.getActiveSheet();
+    const operation = postBody.action || 'add';
 
-    if (action === 'add') {
-      const c = postData.card;
+    if (operation === 'add') {
+      const cardRecord = postBody.card;
       const targetRow = Math.max(sheet.getLastRow() + 1, DATA_START_ROW);
-      const profitFormula = `=IF(I${targetRow}>0, I${targetRow}-G${targetRow}, 0)`;
-      const roiFormula = `=IF(G${targetRow}>0, TEXT((I${targetRow}-G${targetRow})/G${targetRow}, "0.0%"), "0.0%")`;
+      const profitFormula = `=IF(J${targetRow}>0, J${targetRow}-H${targetRow}, 0)`;
+      const roiFormula = `=IF(H${targetRow}>0, TEXT((J${targetRow}-H${targetRow})/H${targetRow}, "0.0%"), "0.0%")`;
       
-      let finalImageUrl = c.imageUrl || '';
-      
-      // ถ้ารูปส่งมาเป็น Base64 (วางจากคลิปบอร์ด หรืออัปโหลดไฟล์) ให้อัปโหลดเข้า Google Drive อัตโนมัติ
-      if (c.imageBase64 && c.imageBase64.startsWith('data:image')) {
-        try {
-          const parts = c.imageBase64.split(',');
-          const contentType = parts[0].split(':')[1].split(';')[0];
-          const decoded = Utilities.base64Decode(parts[1]);
-          const blob = Utilities.newBlob(decoded, contentType, `card_${Date.now()}.png`);
-          
-          // หาโฟลเดอร์สำหรับเก็บภาพการ์ด (ถ้าไม่มีจะสร้างให้อัตโนมัติ)
-          let folder;
-          const folderIter = DriveApp.getFoldersByName('OnePieceCards_Images');
-          if (folderIter.hasNext()) {
-            folder = folderIter.next();
-          } else {
-            folder = DriveApp.createFolder('OnePieceCards_Images');
-            folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          }
-          
-          const file = folder.createFile(blob);
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          finalImageUrl = `https://lh3.googleusercontent.com/d/${file.getId()}`;
-        } catch (imgErr) {
-          finalImageUrl = c.imageUrl || '';
-        }
+      let finalImageUrl = cardRecord.imageUrl || '';
+      if (cardRecord.imageBase64 && cardRecord.imageBase64.startsWith('data:image')) {
+        finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64) || finalImageUrl;
       }
 
-      // ในช่องรูปภาพ ถ้ามี URL ให้ใส่สูตร =IMAGE(...) ลงชีตให้แสดงภาพทันที
-      const imageCell = finalImageUrl ? `=IMAGE("${finalImageUrl}")` : '';
-
-      const newRow = [
-        imageCell,
-        c.cardName || '',
-        c.cardSet || '',
-        c.rarityCondition || '',
-        c.status || 'มีในสต็อก',
-        c.buyDate || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd"),
-        c.buyPrice || 0,
-        c.sellDate || '',
-        c.sellPrice || 0,
+      const imageFormula = finalImageUrl ? `=IMAGE("${finalImageUrl}")` : '';
+      const newCardRow = [
+        imageFormula,
+        cardRecord.cardName || '',
+        cardRecord.cardSet || '',
+        cardRecord.rarityCondition || '',
+        cardRecord.status || 'มีในสต็อก',
+        cardRecord.buyDate || Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd"),
+        Number(cardRecord.buyPrice) || 0,
+        cardRecord.sellDate || '',
+        Number(cardRecord.sellPrice) || 0,
         profitFormula,
         roiFormula
       ];
       
-      sheet.appendRow(newRow);
-      return responseJSON({ success: true, message: 'บันทึกการ์ดเรียบร้อย', row: targetRow, imageUrl: finalImageUrl });
+      sheet.getRange(targetRow, START_COLUMN, 1, NUM_COLUMNS).setValues([newCardRow]);
+      return respondJson({ success: true, message: 'บันทึกการ์ดเรียบร้อย', row: targetRow, imageUrl: finalImageUrl });
     }
 
-    if (action === 'updateStatus') {
-      const row = postData.rowId;
-      if (row) {
-        sheet.getRange(row, 5).setValue(postData.status || 'ขายแล้ว');
-        if (postData.sellPrice) sheet.getRange(row, 9).setValue(postData.sellPrice);
-        if (postData.sellDate) sheet.getRange(row, 8).setValue(postData.sellDate);
-        return responseJSON({ success: true, message: 'อัปเดตสถานะสำเร็จ' });
+    if (operation === 'edit') {
+      const targetRow = Number(postBody.rowId);
+      const cardRecord = postBody.card;
+      if (targetRow && targetRow >= DATA_START_ROW && cardRecord) {
+        let finalImageUrl = cardRecord.imageUrl || '';
+        if (cardRecord.imageBase64 && cardRecord.imageBase64.startsWith('data:image')) {
+          finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64) || finalImageUrl;
+        }
+
+        if (finalImageUrl) {
+          sheet.getRange(targetRow, 2).setValue(`=IMAGE("${finalImageUrl}")`);
+        }
+        if (cardRecord.cardName !== undefined) sheet.getRange(targetRow, 3).setValue(cardRecord.cardName);
+        if (cardRecord.cardSet !== undefined) sheet.getRange(targetRow, 4).setValue(cardRecord.cardSet);
+        if (cardRecord.rarityCondition !== undefined) sheet.getRange(targetRow, 5).setValue(cardRecord.rarityCondition);
+        if (cardRecord.status !== undefined) sheet.getRange(targetRow, 6).setValue(cardRecord.status);
+        if (cardRecord.buyDate !== undefined) sheet.getRange(targetRow, 7).setValue(cardRecord.buyDate);
+        if (cardRecord.buyPrice !== undefined) sheet.getRange(targetRow, 8).setValue(Number(cardRecord.buyPrice));
+        if (cardRecord.sellDate !== undefined) sheet.getRange(targetRow, 9).setValue(cardRecord.sellDate);
+        if (cardRecord.sellPrice !== undefined) sheet.getRange(targetRow, 10).setValue(Number(cardRecord.sellPrice));
+
+        return respondJson({ success: true, message: 'แก้ไขข้อมูลการ์ดเรียบร้อย' });
       }
     }
 
-    return responseJSON({ success: false, message: 'Invalid action' });
-  } catch (error) {
-    return responseJSON({ success: false, message: error.toString() });
+    if (operation === 'delete') {
+      const targetRow = Number(postBody.rowId);
+      if (targetRow && targetRow >= DATA_START_ROW) {
+        sheet.deleteRow(targetRow);
+        return respondJson({ success: true, message: 'ลบการ์ดเรียบร้อยแล้ว' });
+      }
+    }
+
+    if (operation === 'updateStatus') {
+      const targetRow = Number(postBody.rowId);
+      if (targetRow && targetRow >= DATA_START_ROW) {
+        sheet.getRange(targetRow, 6).setValue(postBody.status || 'ขายแล้ว');
+        if (postBody.sellDate !== undefined) sheet.getRange(targetRow, 9).setValue(postBody.sellDate);
+        if (postBody.sellPrice !== undefined) sheet.getRange(targetRow, 10).setValue(Number(postBody.sellPrice));
+        return respondJson({ success: true, message: 'อัปเดตสถานะสำเร็จ' });
+      }
+    }
+
+    return respondJson({ success: false, message: 'Invalid action' });
+  } catch (caughtError) {
+    return respondJson({ success: false, message: caughtError.toString() });
   }
 }
 
-function formatDate(val) {
-  if (!val) return '';
-  if (val instanceof Date) return Utilities.formatDate(val, "GMT+7", "yyyy-MM-dd");
-  return String(val);
+function saveImageBlobToDrive(base64Payload) {
+  try {
+    const encodedSegments = base64Payload.split(',');
+    const mimeHeader = encodedSegments[0].split(':')[1].split(';')[0];
+    const decodedBytes = Utilities.base64Decode(encodedSegments[1]);
+    const fileBlob = Utilities.newBlob(decodedBytes, mimeHeader, `card_${Date.now()}.png`);
+    
+    let targetFolder;
+    const folderSearch = DriveApp.getFoldersByName('OnePieceCards_Images');
+    if (folderSearch.hasNext()) {
+      targetFolder = folderSearch.next();
+    } else {
+      targetFolder = DriveApp.createFolder('OnePieceCards_Images');
+      targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+    
+    const createdFile = targetFolder.createFile(fileBlob);
+    createdFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return `https://lh3.googleusercontent.com/d/${createdFile.getId()}`;
+  } catch (driveError) {
+    return '';
+  }
 }
 
-function responseJSON(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
+function formatDate(dateValue) {
+  if (!dateValue) return '';
+  if (dateValue instanceof Date) return Utilities.formatDate(dateValue, "GMT+7", "yyyy-MM-dd");
+  return String(dateValue);
+}
+
+function respondJson(outputObject) {
+  return ContentService.createTextOutput(JSON.stringify(outputObject))
     .setMimeType(ContentService.MimeType.JSON);
 }

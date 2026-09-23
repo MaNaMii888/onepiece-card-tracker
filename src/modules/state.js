@@ -8,7 +8,9 @@ export const store = {
   searchQuery: '',
   viewMode: 'grid',
   activeSellCard: null,
-  currentImageBase64: ''
+  activeEditCard: null,
+  currentImageBase64: '',
+  editImageBase64: ''
 };
 
 export function setCards(newCards) {
@@ -19,33 +21,41 @@ export function setSummary(newSummary) {
   store.summary = newSummary;
 }
 
-export function setFilterStatus(status) {
-  store.filterStatus = status;
+export function setFilterStatus(selectedStatus) {
+  store.filterStatus = selectedStatus;
 }
 
-export function setSearchQuery(query) {
-  store.searchQuery = query;
+export function setSearchQuery(queryString) {
+  store.searchQuery = queryString;
 }
 
-export function setViewMode(mode) {
-  store.viewMode = mode;
+export function setViewMode(selectedMode) {
+  store.viewMode = selectedMode;
 }
 
-export function setActiveSellCard(card) {
-  store.activeSellCard = card;
+export function setActiveSellCard(targetCard) {
+  store.activeSellCard = targetCard;
 }
 
-export function setCurrentImageBase64(base64) {
-  store.currentImageBase64 = base64;
+export function setActiveEditCard(targetCard) {
+  store.activeEditCard = targetCard;
+}
+
+export function setCurrentImageBase64(imageString) {
+  store.currentImageBase64 = imageString;
+}
+
+export function setEditImageBase64(imageString) {
+  store.editImageBase64 = imageString;
 }
 
 export function getGeminiApiKey() {
   return localStorage.getItem('op_card_gemini_key') || '';
 }
 
-export function setGeminiApiKey(key) {
-  if (key) {
-    localStorage.setItem('op_card_gemini_key', key.trim());
+export function setGeminiApiKey(apiKeyString) {
+  if (apiKeyString) {
+    localStorage.setItem('op_card_gemini_key', apiKeyString.trim());
   } else {
     localStorage.removeItem('op_card_gemini_key');
   }

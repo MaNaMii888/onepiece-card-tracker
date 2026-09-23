@@ -3,20 +3,40 @@
  * Clean Architecture & Modular ES6 Design
  */
 
-import { store, setCards, setSummary, setFilterStatus, setSearchQuery, setViewMode, setActiveSellCard, setCurrentImageBase64, getGeminiApiKey, setGeminiApiKey } from './modules/state.js';
-import { fetchCardsFromSheet, addCardToSheet, updateCardStatusInSheet } from './modules/api.js';
+import { 
+  store, 
+  setCards, 
+  setSummary, 
+  setFilterStatus, 
+  setSearchQuery, 
+  setViewMode, 
+  setActiveSellCard, 
+  setActiveEditCard,
+  setCurrentImageBase64, 
+  setEditImageBase64,
+  getGeminiApiKey, 
+  setGeminiApiKey 
+} from './modules/state.js';
+import { 
+  fetchCardsFromSheet, 
+  addCardToSheet, 
+  editCardInSheet,
+  deleteCardFromSheet,
+  updateCardStatusInSheet 
+} from './modules/api.js';
 import { scanCardWithGemini } from './modules/ai.js';
 import { processCardImageFile } from './modules/imageProcessor.js';
 import { showToast, updateKpiDisplay, renderCardsList, fmtMoney } from './modules/ui.js';
 
-// DOM Elements
+// DOM Elements Cache
 const refreshIcon = document.getElementById('refreshIcon');
 const loadingState = document.getElementById('loadingState');
 const addCardModal = document.getElementById('addCardModal');
+const editCardModal = document.getElementById('editCardModal');
 const sellCardModal = document.getElementById('sellCardModal');
 const apiKeyModal = document.getElementById('apiKeyModal');
 const addCardForm = document.getElementById('addCardForm');
-const searchInput = document.getElementById('searchInput');
+const searchInputElement = document.getElementById('searchInput');
 
 // Load Data from Google Sheet
 async function loadSheetData() {
@@ -27,18 +47,21 @@ async function loadSheetData() {
   document.getElementById('emptyState').classList.add('hidden');
 
   try {
-    const data = await fetchCardsFromSheet();
-    if (data.success) {
-      const validCards = (data.cards || []).filter(c => c.cardName && c.cardName !== 'รูปภาพหน้าการ์ด' && c.cardName !== 'ชื่อการ์ด');
+    const sheetResponse = await fetchCardsFromSheet();
+    if (sheetResponse.success) {
+      const validCards = (sheetResponse.cards || []).filter(singleCard => {
+        const title = singleCard.cardName;
+        return title && title !== 'รูปภาพหน้าการ์ด' && title !== 'ชื่อการ์ด';
+      });
       setCards(validCards);
-      setSummary(data.summary || {});
+      setSummary(sheetResponse.summary || {});
       updateKpiDisplay();
-      renderCardsList(openSellModal);
+      renderCardsList(openSellModal, openEditModal);
     } else {
-      showToast('เกิดข้อผิดพลาด: ' + (data.message || 'ไม่สามารถโหลดข้อมูลได้'), 'error');
+      showToast('เกิดข้อผิดพลาด: ' + (sheetResponse.message || 'ไม่สามารถโหลดข้อมูลได้'), 'error');
     }
-  } catch (err) {
-    showToast('ไม่สามารถเชื่อมต่อ Google Sheets API ได้: ' + err.message, 'error');
+  } catch (networkError) {
+    showToast('ไม่สามารถเชื่อมต่อ Google Sheets API ได้: ' + networkError.message, 'error');
   } finally {
     refreshIcon.classList.remove('animate-spin');
     loadingState.classList.add('hidden');
@@ -59,26 +82,26 @@ function closeAddCardModal() {
   addCardModal.classList.remove('flex');
 }
 
-// Image Dropzone & File Handling
-async function handleFile(file) {
-  if (!file) return;
+// Add Card Image & File Intake
+async function handleFile(selectedFile) {
+  if (!selectedFile) return;
   try {
-    const processed = await processCardImageFile(file);
-    setCurrentImageBase64(processed.base64);
+    const processedImage = await processCardImageFile(selectedFile);
+    setCurrentImageBase64(processedImage.base64);
 
-    document.getElementById('previewImgEl').src = processed.base64;
-    document.getElementById('previewImgMeta').textContent = `${processed.name} (${processed.sizeKb} KB)`;
+    document.getElementById('previewImgEl').src = processedImage.base64;
+    document.getElementById('previewImgMeta').textContent = `${processedImage.name} (${processedImage.sizeKb} KB)`;
     document.getElementById('dropzoneEmpty').classList.add('hidden');
-    const previewEl = document.getElementById('dropzonePreview');
-    previewEl.classList.remove('hidden');
-    previewEl.classList.add('flex');
+    const previewContainer = document.getElementById('dropzonePreview');
+    previewContainer.classList.remove('hidden');
+    previewContainer.classList.add('flex');
     showToast('รับรูปภาพเรียบร้อยแล้ว! 📸', 'success');
 
     if (getGeminiApiKey()) {
       runAiScan();
     }
-  } catch (err) {
-    showToast(err.message, 'error');
+  } catch (fileError) {
+    showToast(fileError.message, 'error');
   }
 }
 
@@ -87,9 +110,9 @@ function clearCardImage() {
   document.getElementById('cardFileInput').value = '';
   document.getElementById('previewImgEl').src = '';
   document.getElementById('dropzoneEmpty').classList.remove('hidden');
-  const previewEl = document.getElementById('dropzonePreview');
-  previewEl.classList.add('hidden');
-  previewEl.classList.remove('flex');
+  const previewContainer = document.getElementById('dropzonePreview');
+  previewContainer.classList.add('hidden');
+  previewContainer.classList.remove('flex');
 }
 
 // AI Vision Scan Trigger
@@ -99,40 +122,40 @@ async function runAiScan() {
     return;
   }
 
-  const btnText = document.getElementById('aiScanBtnText');
-  const btn = document.getElementById('btnAiScan');
-  btn.disabled = true;
-  btnText.textContent = 'กำลังสแกน...';
+  const scanTextElement = document.getElementById('aiScanBtnText');
+  const scanButton = document.getElementById('btnAiScan');
+  scanButton.disabled = true;
+  scanTextElement.textContent = 'กำลังสแกน...';
 
   try {
-    const base64Data = store.currentImageBase64.split(',')[1];
-    const mimeType = store.currentImageBase64.split(';')[0].split(':')[1];
-    const cardInfo = await scanCardWithGemini(base64Data, mimeType);
+    const base64Content = store.currentImageBase64.split(',')[1];
+    const imageMimeType = store.currentImageBase64.split(';')[0].split(':')[1];
+    const scannedCard = await scanCardWithGemini(base64Content, imageMimeType);
 
-    if (cardInfo.cardName) document.getElementById('formCardName').value = cardInfo.cardName;
-    if (cardInfo.cardSet) document.getElementById('formCardSet').value = cardInfo.cardSet;
-    if (cardInfo.rarityCondition) document.getElementById('formRarity').value = cardInfo.rarityCondition;
+    if (scannedCard.cardName) document.getElementById('formCardName').value = scannedCard.cardName;
+    if (scannedCard.cardSet) document.getElementById('formCardSet').value = scannedCard.cardSet;
+    if (scannedCard.rarityCondition) document.getElementById('formRarity').value = scannedCard.rarityCondition;
 
     showToast('สแกนและกรอกข้อมูลการ์ดเรียบร้อย! ✨', 'success');
-  } catch (err) {
-    if (err.message === 'MISSING_API_KEY') {
+  } catch (scanError) {
+    if (scanError.message === 'MISSING_API_KEY') {
       openApiKeyModal();
       showToast('กรุณาใส่ Gemini API Key ฟรี เพื่อเปิดใช้ระบบสแกน', 'info');
     } else {
-      showToast('สแกนไม่สำเร็จ: ' + err.message, 'error');
+      showToast('สแกนไม่สำเร็จ: ' + scanError.message, 'error');
     }
   } finally {
-    btn.disabled = false;
-    btnText.textContent = 'AI สแกนชื่อ & สภาพ';
+    scanButton.disabled = false;
+    scanTextElement.textContent = 'AI สแกนชื่อ & สภาพ';
   }
 }
 
-// Form Submission
-async function handleFormSubmit(e) {
-  e.preventDefault();
-  const btn = document.getElementById('btnSubmitAdd');
-  btn.disabled = true;
-  btn.innerHTML = '<span>⏳ กำลังบันทึกลงชีต...</span>';
+// Add Form Submission
+async function handleFormSubmit(submitEvent) {
+  submitEvent.preventDefault();
+  const submitButton = document.getElementById('btnSubmitAdd');
+  submitButton.disabled = true;
+  submitButton.innerHTML = '<span>⏳ กำลังบันทึกลงชีต...</span>';
 
   const cardPayload = {
     cardName: document.getElementById('formCardName').value.trim(),
@@ -152,19 +175,145 @@ async function handleFormSubmit(e) {
     addCardForm.reset();
     clearCardImage();
     setTimeout(loadSheetData, 2000);
-  } catch (err) {
-    showToast('เกิดข้อผิดพลาดในการบันทึก: ' + err.message, 'error');
+  } catch (submitError) {
+    showToast('เกิดข้อผิดพลาดในการบันทึก: ' + submitError.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<span>💾 บันทึกลง Google Sheet</span>';
+    submitButton.disabled = false;
+    submitButton.innerHTML = '<span>💾 บันทึกลง Google Sheet</span>';
+  }
+}
+
+// Edit Card Modal Controls
+function openEditModal(cardRowId) {
+  const matchingCard = store.cards.find(singleCard => Number(singleCard.rowId) === Number(cardRowId));
+  if (!matchingCard) {
+    showToast('ไม่พบข้อมูลการ์ดที่ต้องการแก้ไข', 'error');
+    return;
+  }
+
+  setActiveEditCard(matchingCard);
+  setEditImageBase64('');
+
+  document.getElementById('editCardRowId').value = matchingCard.rowId;
+  document.getElementById('editFormCardName').value = matchingCard.cardName || '';
+  document.getElementById('editFormCardSet').value = matchingCard.cardSet || '';
+  document.getElementById('editFormRarity').value = matchingCard.rarityCondition || '';
+  document.getElementById('editFormStatus').value = matchingCard.status || 'มีในสต็อก';
+  document.getElementById('editFormBuyPrice').value = matchingCard.buyPrice || 0;
+  document.getElementById('editFormBuyDate').value = matchingCard.buyDate || '';
+  document.getElementById('editFormSellPrice').value = matchingCard.sellPrice || '';
+  document.getElementById('editFormSellDate').value = matchingCard.sellDate || '';
+
+  const editPreviewElement = document.getElementById('editPreviewImgEl');
+  const editStatusElement = document.getElementById('editImageStatusText');
+  if (matchingCard.imageUrl) {
+    editPreviewElement.src = matchingCard.imageUrl;
+    editStatusElement.textContent = 'รูปภาพปัจจุบันจากการ์ด';
+  } else {
+    editPreviewElement.src = '';
+    editStatusElement.textContent = 'ยังไม่มีรูปภาพ (คลิกเพื่อเลือกไฟล์ หรือ Ctrl+V)';
+  }
+
+  editCardModal.classList.remove('hidden');
+  editCardModal.classList.add('flex');
+}
+
+function closeEditModal() {
+  editCardModal.classList.add('hidden');
+  editCardModal.classList.remove('flex');
+  setActiveEditCard(null);
+  setEditImageBase64('');
+}
+
+async function handleEditFile(selectedFile) {
+  if (!selectedFile) return;
+  try {
+    const processedImage = await processCardImageFile(selectedFile);
+    setEditImageBase64(processedImage.base64);
+
+    document.getElementById('editPreviewImgEl').src = processedImage.base64;
+    document.getElementById('editImageStatusText').textContent = `รูปใหม่พร้อมบันทึก (${processedImage.sizeKb} KB)`;
+    showToast('เลือกรูปภาพใหม่เรียบร้อย 📸', 'success');
+  } catch (fileError) {
+    showToast(fileError.message, 'error');
+  }
+}
+
+function clearEditCardImage() {
+  setEditImageBase64('');
+  document.getElementById('editCardFileInput').value = '';
+  document.getElementById('editPreviewImgEl').src = '';
+  document.getElementById('editImageStatusText').textContent = 'ลบรูปภาพแล้ว (กดบันทึกเพื่ออัปเดตชีต)';
+}
+
+async function handleEditFormSubmit(submitEvent) {
+  submitEvent.preventDefault();
+  const cardRowId = Number(document.getElementById('editCardRowId').value);
+  if (!cardRowId) {
+    showToast('ไม่พบรหัสแถวการ์ด', 'error');
+    return;
+  }
+
+  const submitButton = document.getElementById('btnSubmitEdit');
+  submitButton.disabled = true;
+  submitButton.innerHTML = '<span>⏳ กำลังบันทึก...</span>';
+
+  const updatedRecord = {
+    cardName: document.getElementById('editFormCardName').value.trim(),
+    cardSet: document.getElementById('editFormCardSet').value.trim(),
+    rarityCondition: document.getElementById('editFormRarity').value.trim(),
+    status: document.getElementById('editFormStatus').value,
+    buyPrice: Number(document.getElementById('editFormBuyPrice').value) || 0,
+    buyDate: document.getElementById('editFormBuyDate').value,
+    sellPrice: Number(document.getElementById('editFormSellPrice').value) || 0,
+    sellDate: document.getElementById('editFormSellDate').value,
+    imageUrl: store.activeEditCard ? store.activeEditCard.imageUrl : '',
+    imageBase64: store.editImageBase64 || ''
+  };
+
+  try {
+    await editCardInSheet(cardRowId, updatedRecord);
+    showToast('อัปเดตข้อมูลการ์ดเรียบร้อย! ✨', 'success');
+    closeEditModal();
+    setTimeout(loadSheetData, 1500);
+  } catch (editError) {
+    showToast('บันทึกไม่สำเร็จ: ' + editError.message, 'error');
+  } finally {
+    submitButton.disabled = false;
+    submitButton.innerHTML = '<span>💾 บันทึกการแก้ไข</span>';
+  }
+}
+
+async function handleDeleteCardClick() {
+  const cardRowId = Number(document.getElementById('editCardRowId').value);
+  const cardTitle = document.getElementById('editFormCardName').value;
+  if (!cardRowId) return;
+
+  const isConfirmed = window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบการ์ด "${cardTitle}" ออกจากระบบ?`);
+  if (!isConfirmed) return;
+
+  const deleteButton = document.getElementById('btnDeleteCard');
+  deleteButton.disabled = true;
+  deleteButton.textContent = 'กำลังลบ...';
+
+  try {
+    await deleteCardFromSheet(cardRowId);
+    showToast(`ลบการ์ด "${cardTitle}" เรียบร้อยแล้ว 🗑️`, 'success');
+    closeEditModal();
+    setTimeout(loadSheetData, 1500);
+  } catch (deleteError) {
+    showToast('เกิดข้อผิดพลาดในการลบ: ' + deleteError.message, 'error');
+  } finally {
+    deleteButton.disabled = false;
+    deleteButton.innerHTML = '<span>🗑️</span> <span class="hidden sm:inline">ลบการ์ด</span>';
   }
 }
 
 // Sell Modal Controls
-function openSellModal(rowId, name, buyPrice) {
-  setActiveSellCard({ rowId, name, buyPrice });
-  document.getElementById('sellCardNameDisplay').textContent = name;
-  document.getElementById('sellCardBuyDisplay').textContent = fmtMoney(buyPrice);
+function openSellModal(cardRowId, cardTitle, initialCost) {
+  setActiveSellCard({ rowId: cardRowId, name: cardTitle, buyPrice: initialCost });
+  document.getElementById('sellCardNameDisplay').textContent = cardTitle;
+  document.getElementById('sellCardBuyDisplay').textContent = fmtMoney(initialCost);
   document.getElementById('sellDateInput').value = new Date().toISOString().split('T')[0];
   document.getElementById('sellPriceInput').value = '';
   sellCardModal.classList.remove('hidden');
@@ -177,31 +326,31 @@ function closeSellModal() {
 }
 
 async function confirmSellCard() {
-  const sellPrice = Number(document.getElementById('sellPriceInput').value);
-  if (!sellPrice || sellPrice <= 0) {
+  const saleAmount = Number(document.getElementById('sellPriceInput').value);
+  if (!saleAmount || saleAmount <= 0) {
     showToast('กรุณาระบุราคาขายที่ถูกต้อง', 'error');
     return;
   }
 
-  const btn = document.getElementById('btnConfirmSell');
-  btn.disabled = true;
-  btn.textContent = 'กำลังบันทึก...';
+  const confirmButton = document.getElementById('btnConfirmSell');
+  confirmButton.disabled = true;
+  confirmButton.textContent = 'กำลังบันทึก...';
 
   try {
     await updateCardStatusInSheet(
       store.activeSellCard.rowId,
       'ขายแล้ว',
-      sellPrice,
+      saleAmount,
       document.getElementById('sellDateInput').value
     );
     showToast(`ปิดการขาย ${store.activeSellCard.name} เรียบร้อย! 💰`, 'success');
     closeSellModal();
     setTimeout(loadSheetData, 1200);
-  } catch (err) {
-    showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  } catch (sellError) {
+    showToast('เกิดข้อผิดพลาด: ' + sellError.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'ยืนยันการขาย';
+    confirmButton.disabled = false;
+    confirmButton.textContent = 'ยืนยันการขาย';
   }
 }
 
@@ -218,70 +367,84 @@ function closeApiKeyModal() {
 }
 
 function saveApiKey() {
-  const key = document.getElementById('geminiApiKeyInput').value.trim();
-  setGeminiApiKey(key);
-  showToast(key ? 'บันทึก Gemini API Key เรียบร้อยแล้ว! 🤖' : 'ลบ API Key แล้ว', 'success');
+  const enteredKey = document.getElementById('geminiApiKeyInput').value.trim();
+  setGeminiApiKey(enteredKey);
+  showToast(enteredKey ? 'บันทึก Gemini API Key เรียบร้อยแล้ว! 🤖' : 'ลบ API Key แล้ว', 'success');
   closeApiKeyModal();
 }
 
 // Filter and View Mode Handlers
-function setFilter(status) {
-  setFilterStatus(status);
-  ['tabFilterAll', 'tabFilterStock', 'tabFilterSold'].forEach(id => {
-    document.getElementById(id).className = "px-3 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white";
+function setFilter(filterType) {
+  setFilterStatus(filterType);
+  ['tabFilterAll', 'tabFilterStock', 'tabFilterSold'].forEach(tabId => {
+    document.getElementById(tabId).className = "px-3 py-1.5 rounded-lg font-medium transition text-slate-400 hover:text-white";
   });
-  const activeId = status === 'all' ? 'tabFilterAll' : status === 'stock' ? 'tabFilterStock' : 'tabFilterSold';
-  document.getElementById(activeId).className = "px-3 py-1.5 rounded-lg font-medium transition bg-cyan-500 text-slate-950 font-bold";
-  renderCardsList(openSellModal);
+  const activeTabId = filterType === 'all' ? 'tabFilterAll' : filterType === 'stock' ? 'tabFilterStock' : 'tabFilterSold';
+  document.getElementById(activeTabId).className = "px-3 py-1.5 rounded-lg font-medium transition bg-cyan-500 text-slate-950 font-bold";
+  renderCardsList(openSellModal, openEditModal);
 }
 
-function setView(mode) {
-  setViewMode(mode);
-  document.getElementById('btnViewGrid').className = mode === 'grid' ? 'p-1.5 rounded-lg text-cyan-400 bg-slate-800 transition' : 'p-1.5 rounded-lg text-slate-400 hover:text-white transition';
-  document.getElementById('btnViewTable').className = mode === 'table' ? 'p-1.5 rounded-lg text-cyan-400 bg-slate-800 transition' : 'p-1.5 rounded-lg text-slate-400 hover:text-white transition';
-  renderCardsList(openSellModal);
+function setView(viewStyle) {
+  setViewMode(viewStyle);
+  document.getElementById('btnViewGrid').className = viewStyle === 'grid' ? 'p-1.5 rounded-lg text-cyan-400 bg-slate-800 transition' : 'p-1.5 rounded-lg text-slate-400 hover:text-white transition';
+  document.getElementById('btnViewTable').className = viewStyle === 'table' ? 'p-1.5 rounded-lg text-cyan-400 bg-slate-800 transition' : 'p-1.5 rounded-lg text-slate-400 hover:text-white transition';
+  renderCardsList(openSellModal, openEditModal);
 }
 
 // Event Listeners Setup
 function initEventListeners() {
   // Global Clipboard Paste Listener (Ctrl+V)
-  window.addEventListener('paste', (e) => {
-    if (addCardModal && !addCardModal.classList.contains('hidden')) {
-      const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile();
-          handleFile(blob);
-          e.preventDefault();
-          break;
+  window.addEventListener('paste', (pasteEvent) => {
+    const isAddOpen = addCardModal && !addCardModal.classList.contains('hidden');
+    const isEditOpen = editCardModal && !editCardModal.classList.contains('hidden');
+    if (!isAddOpen && !isEditOpen) return;
+
+    const clipboardEntries = (pasteEvent.clipboardData || pasteEvent.originalEvent?.clipboardData)?.items;
+    if (!clipboardEntries) return;
+
+    for (let entryIndex = 0; entryIndex < clipboardEntries.length; entryIndex++) {
+      if (clipboardEntries[entryIndex].type.indexOf('image') !== -1) {
+        const imageFileBlob = clipboardEntries[entryIndex].getAsFile();
+        if (isAddOpen) {
+          handleFile(imageFileBlob);
+        } else if (isEditOpen) {
+          handleEditFile(imageFileBlob);
         }
+        pasteEvent.preventDefault();
+        break;
       }
     }
   });
 
-  // Search input with debounce/instant filter
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      setSearchQuery(e.target.value.trim().toLowerCase());
-      renderCardsList(openSellModal);
+  // Search filter listener
+  if (searchInputElement) {
+    searchInputElement.addEventListener('input', (inputEvent) => {
+      setSearchQuery(inputEvent.target.value.trim().toLowerCase());
+      renderCardsList(openSellModal, openEditModal);
     });
   }
 
-  // File Picker
-  const fileInput = document.getElementById('cardFileInput');
-  if (fileInput) {
-    fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+  // File Picker for Add Modal
+  const fileInputElement = document.getElementById('cardFileInput');
+  if (fileInputElement) {
+    fileInputElement.addEventListener('change', (changeEvent) => handleFile(changeEvent.target.files[0]));
   }
 
-  // Form submit
+  // Form submit for Add
   if (addCardForm) {
     addCardForm.addEventListener('submit', handleFormSubmit);
   }
 
-  // Expose global actions to window for HTML inline onclicks
+  // Expose global actions to window for HTML inline attributes
   window.loadSheetData = loadSheetData;
   window.openAddCardModal = openAddCardModal;
   window.closeAddCardModal = closeAddCardModal;
+  window.openEditModal = openEditModal;
+  window.closeEditModal = closeEditModal;
+  window.handleEditFileSelect = (selectEvent) => handleEditFile(selectEvent.target.files[0]);
+  window.clearEditCardImage = clearEditCardImage;
+  window.handleEditFormSubmit = handleEditFormSubmit;
+  window.handleDeleteCardClick = handleDeleteCardClick;
   window.clearCardImage = clearCardImage;
   window.runAiCardScan = runAiScan;
   window.openApiKeyModal = openApiKeyModal;

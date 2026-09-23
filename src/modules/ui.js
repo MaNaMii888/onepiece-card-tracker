@@ -3,127 +3,145 @@
  */
 import { store } from './state.js';
 
-export function fmtMoney(num) {
-  return '฿' + Number(num || 0).toLocaleString('th-TH');
+export function fmtMoney(amountNumber) {
+  return '฿' + Number(amountNumber || 0).toLocaleString('th-TH');
 }
 
-export function formatDisplayDate(dateStr) {
-  if (!dateStr) return '-';
+export function formatDisplayDate(dateInput) {
+  if (!dateInput) return '-';
   try {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+    const parsedDate = new Date(dateInput);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
     }
-  } catch (e) {}
-  return String(dateStr).split('T')[0];
+  } catch (error) {}
+  return String(dateInput).split('T')[0];
 }
 
-export function showToast(msg, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  if (!container) return;
+export function showToast(messageText, toastType = 'info') {
+  const containerElement = document.getElementById('toastContainer');
+  if (!containerElement) return;
 
-  const toast = document.createElement('div');
-  toast.className = `px-4 py-3 rounded-xl shadow-2xl text-xs sm:text-sm font-medium border flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto ${
-    type === 'success' ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' :
-    type === 'error' ? 'bg-rose-950/90 border-rose-500/50 text-rose-200' :
-    'bg-slate-900/90 border-slate-700 text-slate-200'
-  }`;
-  toast.innerHTML = `<span>${type === 'success' ? '✅' : type === 'error' ? '⚠️' : 'ℹ️'}</span> <span>${msg}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
+  const toastCard = document.createElement('div');
+  const typeClasses = toastType === 'success' 
+    ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' 
+    : toastType === 'error' 
+      ? 'bg-rose-950/90 border-rose-500/50 text-rose-200' 
+      : 'bg-slate-900/90 border-slate-700 text-slate-200';
+
+  toastCard.className = `px-4 py-3 rounded-xl shadow-2xl text-xs sm:text-sm font-medium border flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto ${typeClasses}`;
+  const iconSymbol = toastType === 'success' ? '✅' : toastType === 'error' ? '⚠️' : 'ℹ️';
+  toastCard.innerHTML = `<span>${iconSymbol}</span> <span>${messageText}</span>`;
+  containerElement.appendChild(toastCard);
+
+  setTimeout(() => toastCard.classList.remove('translate-y-2', 'opacity-0'), 10);
   setTimeout(() => {
-    toast.classList.add('opacity-0', 'translate-y-2');
-    setTimeout(() => toast.remove(), 300);
+    toastCard.classList.add('opacity-0', 'translate-y-2');
+    setTimeout(() => toastCard.remove(), 300);
   }, 3500);
 }
 
 export function updateKpiDisplay() {
-  const totalCards = store.cards.length;
-  let inStock = 0;
-  let sold = 0;
-  let totalCost = 0;
-  let totalSales = 0;
+  const totalCount = store.cards.length;
+  let inStockCount = 0;
+  let soldCount = 0;
+  let totalCostSum = 0;
+  let totalSalesSum = 0;
 
-  store.cards.forEach(c => {
-    const isSold = c.status === 'ขายแล้ว' || c.sellPrice > 0;
-    if (isSold) sold++; else inStock++;
-    totalCost += Number(c.buyPrice || 0);
-    totalSales += Number(c.sellPrice || 0);
+  store.cards.forEach(singleCard => {
+    const isSold = singleCard.status === 'ขายแล้ว' || singleCard.sellPrice > 0;
+    if (isSold) soldCount++; else inStockCount++;
+    totalCostSum += Number(singleCard.buyPrice || 0);
+    totalSalesSum += Number(singleCard.sellPrice || 0);
   });
 
-  const netProfit = totalSales - totalCost;
-  const roi = totalCost > 0 ? ((totalSales - totalCost) / totalCost * 100).toFixed(1) + '%' : '0.0%';
-  const avgCost = totalCards > 0 ? Math.round(totalCost / totalCards) : 0;
+  const netProfitAmount = totalSalesSum - totalCostSum;
+  const netRoiRatio = totalCostSum > 0 ? ((totalSalesSum - totalCostSum) / totalCostSum * 100).toFixed(1) + '%' : '0.0%';
+  const averageCardCost = totalCount > 0 ? Math.round(totalCostSum / totalCount) : 0;
 
-  document.getElementById('kpiTotalCards').textContent = totalCards;
-  document.getElementById('kpiInStock').textContent = inStock;
-  document.getElementById('kpiSold').textContent = sold;
-  document.getElementById('kpiTotalCost').textContent = fmtMoney(totalCost);
-  document.getElementById('kpiAvgCost').textContent = fmtMoney(avgCost);
-  document.getElementById('kpiTotalSales').textContent = fmtMoney(totalSales);
-  document.getElementById('kpiSoldCount').textContent = sold;
+  document.getElementById('kpiTotalCards').textContent = totalCount;
+  document.getElementById('kpiInStock').textContent = inStockCount;
+  document.getElementById('kpiSold').textContent = soldCount;
+  document.getElementById('kpiTotalCost').textContent = fmtMoney(totalCostSum);
+  document.getElementById('kpiAvgCost').textContent = fmtMoney(averageCardCost);
+  document.getElementById('kpiTotalSales').textContent = fmtMoney(totalSalesSum);
+  document.getElementById('kpiSoldCount').textContent = soldCount;
   
-  const netProfitEl = document.getElementById('kpiNetProfit');
-  netProfitEl.textContent = (netProfit >= 0 ? '+' : '') + fmtMoney(netProfit);
-  netProfitEl.className = `text-2xl sm:text-3xl font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+  const netProfitElement = document.getElementById('kpiNetProfit');
+  netProfitElement.textContent = (netProfitAmount >= 0 ? '+' : '') + fmtMoney(netProfitAmount);
+  netProfitElement.className = `text-2xl sm:text-3xl font-extrabold ${netProfitAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
 
-  const roiEl = document.getElementById('kpiRoi');
-  roiEl.textContent = (netProfit >= 0 ? '+' : '') + roi;
-  roiEl.className = `font-bold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+  const roiElement = document.getElementById('kpiRoi');
+  roiElement.textContent = (netProfitAmount >= 0 ? '+' : '') + netRoiRatio;
+  roiElement.className = `font-bold ${netProfitAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
 }
 
-export function renderCardsList(onOpenSellModal) {
-  const filtered = store.cards.filter(c => {
-    const isSold = c.status === 'ขายแล้ว' || c.sellPrice > 0;
+export function renderCardsList(onOpenSellModal, onOpenEditModal) {
+  const filteredCards = store.cards.filter(singleCard => {
+    const isSold = singleCard.status === 'ขายแล้ว' || singleCard.sellPrice > 0;
     if (store.filterStatus === 'stock' && isSold) return false;
     if (store.filterStatus === 'sold' && !isSold) return false;
     if (store.searchQuery) {
-      const matchName = (c.cardName || '').toLowerCase().includes(store.searchQuery);
-      const matchSet = (c.cardSet || '').toLowerCase().includes(store.searchQuery);
-      const matchRarity = (c.rarityCondition || '').toLowerCase().includes(store.searchQuery);
+      const matchName = (singleCard.cardName || '').toLowerCase().includes(store.searchQuery);
+      const matchSet = (singleCard.cardSet || '').toLowerCase().includes(store.searchQuery);
+      const matchRarity = (singleCard.rarityCondition || '').toLowerCase().includes(store.searchQuery);
       return matchName || matchSet || matchRarity;
     }
     return true;
   });
 
-  const gridEl = document.getElementById('cardsGrid');
-  const tableWrapper = document.getElementById('cardsTableWrapper');
-  const emptyEl = document.getElementById('emptyState');
+  const gridElement = document.getElementById('cardsGrid');
+  const tableContainer = document.getElementById('cardsTableWrapper');
+  const emptyElement = document.getElementById('emptyState');
 
-  if (filtered.length === 0) {
-    gridEl.classList.add('hidden');
-    tableWrapper.classList.add('hidden');
-    emptyEl.classList.remove('hidden');
+  if (filteredCards.length === 0) {
+    gridElement.classList.add('hidden');
+    tableContainer.classList.add('hidden');
+    emptyElement.classList.remove('hidden');
     return;
   }
 
-  emptyEl.classList.add('hidden');
+  emptyElement.classList.add('hidden');
 
   if (store.viewMode === 'grid') {
-    tableWrapper.classList.add('hidden');
-    gridEl.classList.remove('hidden');
-    gridEl.innerHTML = filtered.map(c => renderCardGridItem(c)).join('');
+    tableContainer.classList.add('hidden');
+    gridElement.classList.remove('hidden');
+    gridElement.innerHTML = filteredCards.map(singleCard => renderCardGridItem(singleCard)).join('');
   } else {
-    gridEl.classList.add('hidden');
-    tableWrapper.classList.remove('hidden');
-    const tbody = document.getElementById('cardsTableBody');
-    tbody.innerHTML = filtered.map(c => renderCardTableRow(c)).join('');
+    gridElement.classList.add('hidden');
+    tableContainer.classList.remove('hidden');
+    const tableBody = document.getElementById('cardsTableBody');
+    tableBody.innerHTML = filteredCards.map(singleCard => renderCardTableRow(singleCard)).join('');
   }
 
-  // Attach sell button click events
-  document.querySelectorAll('.btn-open-sell').forEach(btn => {
-    btn.onclick = () => {
-      const rowId = Number(btn.dataset.rowid);
-      const name = btn.dataset.cardname;
-      const buyPrice = Number(btn.dataset.buyprice);
-      onOpenSellModal(rowId, name, buyPrice);
+  attachCardActionEvents(onOpenSellModal, onOpenEditModal);
+}
+
+function attachCardActionEvents(onOpenSellModal, onOpenEditModal) {
+  document.querySelectorAll('.btn-open-sell').forEach(actionButton => {
+    actionButton.onclick = () => {
+      const cardRowId = Number(actionButton.dataset.rowid);
+      const cardTitle = actionButton.dataset.cardname;
+      const initialCost = Number(actionButton.dataset.buyprice);
+      onOpenSellModal(cardRowId, cardTitle, initialCost);
+    };
+  });
+
+  document.querySelectorAll('.btn-open-edit').forEach(actionButton => {
+    actionButton.onclick = () => {
+      const cardRowId = Number(actionButton.dataset.rowid);
+      if (onOpenEditModal) {
+        onOpenEditModal(cardRowId);
+      }
     };
   });
 }
 
-function renderCardGridItem(c) {
-  const isSold = c.status === 'ขายแล้ว' || c.sellPrice > 0;
-  const profit = (Number(c.sellPrice || 0) - Number(c.buyPrice || 0));
+function renderCardGridItem(cardEntry) {
+  const isSold = cardEntry.status === 'ขายแล้ว' || cardEntry.sellPrice > 0;
+  const netCardProfit = (Number(cardEntry.sellPrice || 0) - Number(cardEntry.buyPrice || 0));
+  const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="88" viewBox="0 0 64 88"><rect width="64" height="88" fill="%231e293b"/><text x="50%" y="50%" font-size="24" text-anchor="middle" dominant-baseline="central">🃏</text></svg>`;
+
   return `
     <div class="bg-[#1C2541] border border-slate-800 hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between transition shadow-lg group">
       <div>
@@ -135,22 +153,22 @@ function renderCardGridItem(c) {
           }">
             ${isSold ? 'ขายแล้ว' : 'มีในสต็อก'}
           </span>
-          <span class="text-[11px] text-slate-400 truncate max-w-[140px] text-right" title="${c.rarityCondition || 'Normal'}">${c.rarityCondition || 'Normal'}</span>
+          <span class="text-[11px] text-slate-400 truncate max-w-[140px] text-right" title="${cardEntry.rarityCondition || 'Normal'}">${cardEntry.rarityCondition || 'Normal'}</span>
         </div>
 
         <div class="mt-3 flex gap-3">
-          ${c.imageUrl ? `
-            <img src="${c.imageUrl}" alt="${c.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\x22http://www.w3.org/2000/svg\x22 width=\x2264\x22 height=\x2288\x22 viewBox=\x220 0 64 88\x22><rect width=\x2264\x22 height=\x2288\x22 fill=\x22%231e293b\x22/><text x=\x2250%25\x22 y=\x2250%25\x22 font-size=\x2224\x22 text-anchor=\x22middle\x22 dominant-baseline=\x22central\x22>🃏</text></svg>';">
+          ${cardEntry.imageUrl ? `
+            <img src="${cardEntry.imageUrl}" alt="${cardEntry.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.onerror=null; this.src='${fallbackSvg}';">
           ` : `
             <div class="w-16 h-22 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center text-xl flex-shrink-0 text-slate-600">
               🃏
             </div>
           `}
           <div class="flex-1 min-w-0">
-            <h4 class="text-sm font-bold text-white leading-snug truncate" title="${c.cardName}">${c.cardName}</h4>
-            <p class="text-[11px] text-slate-400 truncate mt-0.5">${c.cardSet || '-'}</p>
+            <h4 class="text-sm font-bold text-white leading-snug truncate" title="${cardEntry.cardName}">${cardEntry.cardName}</h4>
+            <p class="text-[11px] text-slate-400 truncate mt-0.5">${cardEntry.cardSet || '-'}</p>
             <div class="mt-2 text-[11px] text-slate-400">
-              ซื้อ: <span class="text-slate-300">${formatDisplayDate(c.buyDate)}</span>
+              ซื้อ: <span class="text-slate-300">${formatDisplayDate(cardEntry.buyDate)}</span>
             </div>
           </div>
         </div>
@@ -158,26 +176,35 @@ function renderCardGridItem(c) {
 
       <div class="mt-4 pt-3 border-t border-slate-800/80">
         <div class="flex items-center justify-between text-xs">
-          <span class="text-slate-400">ต้นทุน: <strong class="text-amber-400">${fmtMoney(c.buyPrice)}</strong></span>
-          ${isSold ? `
-            <span class="text-slate-400">ขาย: <strong class="text-blue-400">${fmtMoney(c.sellPrice)}</strong></span>
-          ` : `
+          <span class="text-slate-400">ต้นทุน: <strong class="text-amber-400">${fmtMoney(cardEntry.buyPrice)}</strong></span>
+          <div class="flex items-center gap-1.5">
             <button 
-              data-rowid="${c.rowId}" 
-              data-cardname="${c.cardName.replace(/"/g, '&quot;')}" 
-              data-buyprice="${c.buyPrice}" 
-              class="btn-open-sell px-2.5 py-1 text-[11px] rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 font-medium transition"
+              data-rowid="${cardEntry.rowId}" 
+              class="btn-open-edit px-2 py-1 text-[11px] rounded-lg bg-slate-800/90 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white font-medium transition"
+              title="แก้ไขข้อมูลการ์ด"
             >
-              ปิดการขาย
+              ✏️ แก้ไข
             </button>
-          `}
+            ${!isSold ? `
+              <button 
+                data-rowid="${cardEntry.rowId}" 
+                data-cardname="${cardEntry.cardName.replace(/"/g, '&quot;')}" 
+                data-buyprice="${cardEntry.buyPrice}" 
+                class="btn-open-sell px-2.5 py-1 text-[11px] rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 font-medium transition"
+              >
+                ปิดการขาย
+              </button>
+            ` : `
+              <span class="text-slate-400">ขาย: <strong class="text-blue-400">${fmtMoney(cardEntry.sellPrice)}</strong></span>
+            `}
+          </div>
         </div>
 
         ${isSold ? `
           <div class="mt-2 pt-2 border-t border-slate-800/40 flex items-center justify-between text-[11px]">
             <span class="text-slate-400">กำไรสุทธิ:</span>
-            <span class="font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
-              ${profit >= 0 ? '+' : ''}${fmtMoney(profit)} (${c.roi || '0%'})
+            <span class="font-bold ${netCardProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+              ${netCardProfit >= 0 ? '+' : ''}${fmtMoney(netCardProfit)} (${cardEntry.roi || '0%'})
             </span>
           </div>
         ` : ''}
@@ -186,40 +213,51 @@ function renderCardGridItem(c) {
   `;
 }
 
-function renderCardTableRow(c) {
-  const isSold = c.status === 'ขายแล้ว' || c.sellPrice > 0;
-  const profit = (Number(c.sellPrice || 0) - Number(c.buyPrice || 0));
+function renderCardTableRow(cardEntry) {
+  const isSold = cardEntry.status === 'ขายแล้ว' || cardEntry.sellPrice > 0;
+  const netCardProfit = (Number(cardEntry.sellPrice || 0) - Number(cardEntry.buyPrice || 0));
+  const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="88" viewBox="0 0 64 88"><rect width="64" height="88" fill="%231e293b"/><text x="50%" y="50%" font-size="24" text-anchor="middle" dominant-baseline="central">🃏</text></svg>`;
+
   return `
     <tr class="hover:bg-slate-800/40 transition">
       <td class="py-2.5 px-3">
-        ${c.imageUrl ? `<img src="${c.imageUrl}" class="w-8 h-11 object-cover rounded border border-slate-700" onerror="this.src=''">` : '🃏'}
+        ${cardEntry.imageUrl ? `<img src="${cardEntry.imageUrl}" class="w-8 h-11 object-cover rounded border border-slate-700" onerror="this.src='${fallbackSvg}'">` : '🃏'}
       </td>
-      <td class="py-2.5 px-4 font-semibold text-white">${c.cardName}</td>
-      <td class="py-2.5 px-3 text-slate-400">${c.cardSet || '-'}</td>
-      <td class="py-2.5 px-3 text-slate-300">${c.rarityCondition || '-'}</td>
+      <td class="py-2.5 px-4 font-semibold text-white">${cardEntry.cardName}</td>
+      <td class="py-2.5 px-3 text-slate-400">${cardEntry.cardSet || '-'}</td>
+      <td class="py-2.5 px-3 text-slate-300">${cardEntry.rarityCondition || '-'}</td>
       <td class="py-2.5 px-3 text-center">
         <span class="px-2 py-0.5 text-[10px] font-bold rounded-full ${isSold ? 'bg-slate-800 text-slate-400' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}">
           ${isSold ? 'ขายแล้ว' : 'มีในสต็อก'}
         </span>
       </td>
-      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(c.buyDate)}</td>
-      <td class="py-2.5 px-3 text-right font-medium text-amber-400">${fmtMoney(c.buyPrice)}</td>
-      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(c.sellDate)}</td>
-      <td class="py-2.5 px-3 text-right font-medium text-blue-400">${c.sellPrice ? fmtMoney(c.sellPrice) : '-'}</td>
-      <td class="py-2.5 px-3 text-right font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
-        ${isSold ? ((profit >= 0 ? '+' : '') + fmtMoney(profit)) : '-'}
+      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(cardEntry.buyDate)}</td>
+      <td class="py-2.5 px-3 text-right font-medium text-amber-400">${fmtMoney(cardEntry.buyPrice)}</td>
+      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(cardEntry.sellDate)}</td>
+      <td class="py-2.5 px-3 text-right font-medium text-blue-400">${cardEntry.sellPrice ? fmtMoney(cardEntry.sellPrice) : '-'}</td>
+      <td class="py-2.5 px-3 text-right font-bold ${netCardProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+        ${isSold ? ((netCardProfit >= 0 ? '+' : '') + fmtMoney(netCardProfit)) : '-'}
       </td>
       <td class="py-2.5 px-3 text-center">
-        ${!isSold ? `
+        <div class="flex items-center justify-center gap-1.5">
           <button 
-            data-rowid="${c.rowId}" 
-            data-cardname="${c.cardName.replace(/"/g, '&quot;')}" 
-            data-buyprice="${c.buyPrice}" 
-            class="btn-open-sell px-2 py-1 text-[10px] rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition"
+            data-rowid="${cardEntry.rowId}" 
+            class="btn-open-edit px-2 py-1 text-[10px] rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+            title="แก้ไขข้อมูล"
           >
-            ขายแล้ว
+            ✏️
           </button>
-        ` : '<span class="text-slate-600 text-xs">-</span>'}
+          ${!isSold ? `
+            <button 
+              data-rowid="${cardEntry.rowId}" 
+              data-cardname="${cardEntry.cardName.replace(/"/g, '&quot;')}" 
+              data-buyprice="${cardEntry.buyPrice}" 
+              class="btn-open-sell px-2 py-1 text-[10px] rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition"
+            >
+              ขาย
+            </button>
+          ` : ''}
+        </div>
       </td>
     </tr>
   `;
