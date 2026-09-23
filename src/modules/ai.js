@@ -1,15 +1,40 @@
 /**
  * Gemini AI Vision Service Layer
+ * Dynamic Model Discovery & Fallback Cascade
  */
 import { getGeminiApiKey } from './state.js';
 
-export async function scanCardWithGemini(base64Data, mimeType) {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
+async function findUsableModel(apiKeyString) {
+  try {
+    const listResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKeyString}`);
+    if (!listResponse.ok) return null;
+    const modelDirectory = await listResponse.json();
+    const candidateList = (modelDirectory.models || []).filter(singleModel => {
+      const isGenerateSupported = singleModel.supportedGenerationMethods?.includes('generateContent');
+      const isTextOrVision = !singleModel.name.includes('tts') && !singleModel.name.includes('embedding');
+      return isGenerateSupported && isTextOrVision;
+    });
+
+    const matchedFlash = candidateList.find(singleModel => singleModel.name.includes('flash'));
+    if (matchedFlash) {
+      return matchedFlash.name.replace(/^models\//, '');
+    }
+    if (candidateList.length > 0) {
+      return candidateList[0].name.replace(/^models\//, '');
+    }
+  } catch (directoryError) {
+    return null;
+  }
+  return null;
+}
+
+export async function scanCardWithGemini(base64Content, imageMimeType) {
+  const apiKeyString = getGeminiApiKey();
+  if (!apiKeyString) {
     throw new Error('MISSING_API_KEY');
   }
 
-  const prompt = `Analyze this trading card image (likely One Piece Card Game, or other TCG).
+  const promptText = `Analyze this trading card image (likely One Piece Card Game, or other TCG).
 Identify and extract:
 1. Character/Card name and card code (e.g. "Monkey D. Luffy [OP05-119]").
 2. Card set / Booster name (e.g. "OP-05 Awakening of the New Era").
@@ -34,31 +59,33 @@ Return STRICT JSON only with this schema:
   "rarityCondition": "Matched condition"
 }`;
 
-  // Candidate models from user quota: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.1-flash-lite
-  const candidateModels = [
+  const dynamicModel = await findUsableModel(apiKeyString);
+  const prioritizedModels = [
+    dynamicModel,
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3-flash-preview',
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
-  ];
+    'gemini-2.0-flash'
+  ].filter(Boolean);
 
-  let lastError = null;
+  let caughtFailure = null;
 
-  for (const model of candidateModels) {
+  for (const modelIdentifier of prioritizedModels) {
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const response = await fetch(apiUrl, {
+      const endpointUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelIdentifier}:generateContent?key=${apiKeyString}`;
+      const apiResponse = await fetch(endpointUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: prompt },
+              { text: promptText },
               {
                 inline_data: {
-                  mime_type: mimeType,
-                  data: base64Data
+                  mime_type: imageMimeType,
+                  data: base64Content
                 }
               }
             ]
@@ -70,21 +97,21 @@ Return STRICT JSON only with this schema:
         })
       });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        lastError = new Error(errData.error?.message || `Model ${model} returned ${response.status}`);
-        continue; // Try next available model in cascade
+      if (!apiResponse.ok) {
+        const errorJson = await apiResponse.json().catch(() => ({}));
+        caughtFailure = new Error(errorJson.error?.message || `Model ${modelIdentifier} error ${apiResponse.status}`);
+        continue;
       }
 
-      const resData = await response.json();
-      const textResult = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!textResult) continue;
+      const parsedResponse = await apiResponse.json();
+      const generatedText = parsedResponse.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!generatedText) continue;
 
-      return JSON.parse(textResult);
-    } catch (err) {
-      lastError = err;
+      return JSON.parse(generatedText);
+    } catch (networkException) {
+      caughtFailure = networkException;
     }
   }
 
-  throw lastError || new Error('ไม่สามารถเชื่อมต่อโมเดล AI ได้');
+  throw caughtFailure || new Error('ไม่สามารถเชื่อมต่อโมเดล AI ได้');
 }
