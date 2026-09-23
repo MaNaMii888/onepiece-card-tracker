@@ -192,7 +192,7 @@ function renderCardGridItem(cardEntry) {
                 data-buyprice="${cardEntry.buyPrice}" 
                 class="btn-open-sell px-2.5 py-1 text-[11px] rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 font-medium transition"
               >
-                ปิดการขาย
+                💰 ขายแล้ว
               </button>
             ` : `
               <span class="text-slate-400">ขาย: <strong class="text-blue-400">${fmtMoney(cardEntry.sellPrice)}</strong></span>
@@ -252,9 +252,9 @@ function renderCardTableRow(cardEntry) {
               data-rowid="${cardEntry.rowId}" 
               data-cardname="${cardEntry.cardName.replace(/"/g, '&quot;')}" 
               data-buyprice="${cardEntry.buyPrice}" 
-              class="btn-open-sell px-2 py-1 text-[10px] rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition"
+              class="btn-open-sell px-2 py-1 text-[10px] rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition font-medium"
             >
-              ขาย
+              💰 ขายแล้ว
             </button>
           ` : ''}
         </div>
