@@ -19,13 +19,20 @@ function doGet(e) {
     const cards = [];
     if (lastRow >= DATA_START_ROW) {
       const data = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 11).getValues();
+      const formulas = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 1).getFormulas();
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
         if (!row[1]) continue; // ถ้าไม่มีชื่อการ์ดให้ข้าม
         
+        let img = String(row[0] || '');
+        if (!img && formulas[i] && formulas[i][0]) {
+          const m = formulas[i][0].match(/=IMAGE\("([^"]+)"\)/i);
+          if (m) img = m[1];
+        }
+        
         cards.push({
           rowId: DATA_START_ROW + i,
-          imageUrl: String(row[0] || ''),
+          imageUrl: img,
           cardName: String(row[1] || ''),
           cardSet: String(row[2] || ''),
           rarityCondition: String(row[3] || ''),
@@ -64,8 +71,39 @@ function doPost(e) {
       const profitFormula = `=IF(I${targetRow}>0, I${targetRow}-G${targetRow}, 0)`;
       const roiFormula = `=IF(G${targetRow}>0, TEXT((I${targetRow}-G${targetRow})/G${targetRow}, "0.0%"), "0.0%")`;
       
+      let finalImageUrl = c.imageUrl || '';
+      
+      // ถ้ารูปส่งมาเป็น Base64 (วางจากคลิปบอร์ด หรืออัปโหลดไฟล์) ให้อัปโหลดเข้า Google Drive อัตโนมัติ
+      if (c.imageBase64 && c.imageBase64.startsWith('data:image')) {
+        try {
+          const parts = c.imageBase64.split(',');
+          const contentType = parts[0].split(':')[1].split(';')[0];
+          const decoded = Utilities.base64Decode(parts[1]);
+          const blob = Utilities.newBlob(decoded, contentType, `card_${Date.now()}.png`);
+          
+          // หาโฟลเดอร์สำหรับเก็บภาพการ์ด (ถ้าไม่มีจะสร้างให้อัตโนมัติ)
+          let folder;
+          const folderIter = DriveApp.getFoldersByName('OnePieceCards_Images');
+          if (folderIter.hasNext()) {
+            folder = folderIter.next();
+          } else {
+            folder = DriveApp.createFolder('OnePieceCards_Images');
+            folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          }
+          
+          const file = folder.createFile(blob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          finalImageUrl = `https://lh3.googleusercontent.com/d/${file.getId()}`;
+        } catch (imgErr) {
+          finalImageUrl = c.imageUrl || '';
+        }
+      }
+
+      // ในช่องรูปภาพ ถ้ามี URL ให้ใส่สูตร =IMAGE(...) ลงชีตให้แสดงภาพทันที
+      const imageCell = finalImageUrl ? `=IMAGE("${finalImageUrl}")` : '';
+
       const newRow = [
-        c.imageUrl || '',
+        imageCell,
         c.cardName || '',
         c.cardSet || '',
         c.rarityCondition || '',
@@ -79,7 +117,7 @@ function doPost(e) {
       ];
       
       sheet.appendRow(newRow);
-      return responseJSON({ success: true, message: 'บันทึกการ์ดเรียบร้อย', row: targetRow });
+      return responseJSON({ success: true, message: 'บันทึกการ์ดเรียบร้อย', row: targetRow, imageUrl: finalImageUrl });
     }
 
     if (action === 'updateStatus') {
