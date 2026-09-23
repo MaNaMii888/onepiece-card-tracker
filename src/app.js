@@ -27,6 +27,7 @@ import {
 import { scanCardWithGemini } from './modules/ai.js';
 import { processCardImageFile } from './modules/imageProcessor.js';
 import { showToast, updateKpiDisplay, renderCardsList, fmtMoney } from './modules/ui.js';
+import { aggregateMonthlyMetrics, renderPerformanceComboChart } from './modules/analytics.js';
 
 // DOM Elements Cache
 const refreshIcon = document.getElementById('refreshIcon');
@@ -37,6 +38,9 @@ const sellCardModal = document.getElementById('sellCardModal');
 const apiKeyModal = document.getElementById('apiKeyModal');
 const addCardForm = document.getElementById('addCardForm');
 const searchInputElement = document.getElementById('searchInput');
+
+let currentAnalyticsScope = 6;
+let isAnalyticsSectionOpen = false;
 
 // Load Data from Google Sheet
 async function loadSheetData() {
@@ -57,6 +61,7 @@ async function loadSheetData() {
       setSummary(sheetResponse.summary || {});
       updateKpiDisplay();
       renderCardsList(openSellModal, openEditModal);
+      refreshAnalyticsChart();
     } else {
       showToast('เกิดข้อผิดพลาด: ' + (sheetResponse.message || 'ไม่สามารถโหลดข้อมูลได้'), 'error');
     }
@@ -66,6 +71,52 @@ async function loadSheetData() {
     refreshIcon.classList.remove('animate-spin');
     loadingState.classList.add('hidden');
   }
+}
+
+// Portfolio Analytics Controls
+function refreshAnalyticsChart() {
+  const canvasElement = document.getElementById('performanceChartCanvas');
+  if (!canvasElement || !isAnalyticsSectionOpen) return;
+
+  const monthlyMetrics = aggregateMonthlyMetrics(store.cards, currentAnalyticsScope);
+  renderPerformanceComboChart(canvasElement, monthlyMetrics);
+}
+
+function toggleAnalyticsView() {
+  const analyticsSection = document.getElementById('analyticsSection');
+  const toggleButton = document.getElementById('btnToggleAnalytics');
+  if (!analyticsSection) return;
+
+  isAnalyticsSectionOpen = !isAnalyticsSectionOpen;
+  if (isAnalyticsSectionOpen) {
+    analyticsSection.classList.remove('hidden');
+    toggleButton.classList.add('bg-cyan-500/20', 'border-cyan-500/40', 'text-cyan-400');
+    refreshAnalyticsChart();
+  } else {
+    analyticsSection.classList.add('hidden');
+    toggleButton.classList.remove('bg-cyan-500/20', 'border-cyan-500/40', 'text-cyan-400');
+  }
+}
+
+function setAnalyticsTimeScope(monthsCount) {
+  currentAnalyticsScope = monthsCount;
+  const buttonConfigs = [
+    { buttonId: 'btnScope6M', months: 6 },
+    { buttonId: 'btnScope12M', months: 12 },
+    { buttonId: 'btnScopeAll', months: 0 }
+  ];
+
+  buttonConfigs.forEach(configEntry => {
+    const buttonElement = document.getElementById(configEntry.buttonId);
+    if (!buttonElement) return;
+    if (configEntry.months === monthsCount) {
+      buttonElement.className = 'px-2.5 py-1 rounded-lg font-medium transition bg-cyan-500 text-slate-950 font-bold';
+    } else {
+      buttonElement.className = 'px-2.5 py-1 rounded-lg font-medium transition text-slate-400 hover:text-white';
+    }
+  });
+
+  refreshAnalyticsChart();
 }
 
 // Add Card Modal Controls
@@ -454,6 +505,8 @@ function initEventListeners() {
   window.confirmSellCard = confirmSellCard;
   window.setStatusFilter = setFilter;
   window.setViewMode = setView;
+  window.toggleAnalyticsView = toggleAnalyticsView;
+  window.setAnalyticsTimeScope = setAnalyticsTimeScope;
 }
 
 // Bootstrap Application

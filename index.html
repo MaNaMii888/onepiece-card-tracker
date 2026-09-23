@@ -10,6 +10,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- HEIC/HEIF Converter for iPhone Photos -->
   <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+  <!-- Chart.js for Portfolio Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -182,6 +184,34 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
           </button>
         </div>
+
+        <!-- Analytics Toggle Button -->
+        <button onclick="toggleAnalyticsView()" id="btnToggleAnalytics" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-cyan-400 font-medium text-xs transition" title="เปิด/ปิดดูกราฟผลงาน">
+          <span>📊</span>
+          <span class="hidden sm:inline">สถิติพอร์ต</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Collapsible Portfolio Analytics Section -->
+    <section id="analyticsSection" class="hidden bg-[#1C2541] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+        <div>
+          <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+            <span>📊</span> สถิติผลประกอบการรายเดือน (Monthly Performance)
+          </h2>
+          <p class="text-[11px] text-slate-400">เปรียบเทียบยอดขาย ต้นทุน และกำไรสุทธิตามช่วงเวลา</p>
+        </div>
+        <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+          <button onclick="setAnalyticsTimeScope(6)" id="btnScope6M" class="px-2.5 py-1 rounded-lg font-medium transition bg-cyan-500 text-slate-950 font-bold">6 เดือน</button>
+          <button onclick="setAnalyticsTimeScope(12)" id="btnScope12M" class="px-2.5 py-1 rounded-lg font-medium transition text-slate-400 hover:text-white">12 เดือน</button>
+          <button onclick="setAnalyticsTimeScope(0)" id="btnScopeAll" class="px-2.5 py-1 rounded-lg font-medium transition text-slate-400 hover:text-white">ทั้งหมด</button>
+        </div>
+      </div>
+
+      <!-- Chart Canvas Container -->
+      <div class="relative h-64 sm:h-72 w-full">
+        <canvas id="performanceChartCanvas"></canvas>
       </div>
     </section>
 
