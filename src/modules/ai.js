@@ -34,37 +34,57 @@ Return STRICT JSON only with this schema:
   "rarityCondition": "Matched condition"
 }`;
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          {
-            inline_data: {
-              mime_type: mimeType,
-              data: base64Data
-            }
-          }
-        ]
-      }],
-      generationConfig: {
-        response_mime_type: "application/json",
-        temperature: 0.2
-      }
-    })
-  });
+  // Candidate models from user quota: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.1-flash-lite
+  const candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash'
+  ];
 
-  if (!response.ok) {
-    const errData = await response.json();
-    throw new Error(errData.error?.message || 'API request failed');
+  let lastError = null;
+
+  for (const model of candidateModels) {
+    try {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            response_mime_type: "application/json",
+            temperature: 0.2
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        lastError = new Error(errData.error?.message || `Model ${model} returned ${response.status}`);
+        continue; // Try next available model in cascade
+      }
+
+      const resData = await response.json();
+      const textResult = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!textResult) continue;
+
+      return JSON.parse(textResult);
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  const resData = await response.json();
-  const textResult = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!textResult) throw new Error('ไม่ได้รับข้อมูลจากการสแกน');
-
-  return JSON.parse(textResult);
+  throw lastError || new Error('ไม่สามารถเชื่อมต่อโมเดล AI ได้');
 }
