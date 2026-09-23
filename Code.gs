@@ -1,5 +1,6 @@
 /**
  * One Piece Card Tracker API Backend
+ * Syncs Google Sheets with Google Drive Image Storage via Public Thumbnail Endpoint
  */
 const SHEET_NAME = 'onepiece'; // ตรงกับชื่อแท็บในชีตของผู้ใช้
 const DATA_START_ROW = 8;
@@ -12,10 +13,15 @@ function getTargetSheet(spreadsheet) {
          spreadsheet.getActiveSheet();
 }
 
-// ฟังก์ชันสำหรับกด Run ใน Apps Script ครั้งแรกเพื่อกดยืนยันสิทธิ์ Google Drive (Authorize)
 function authorizeAndTest() {
   const folder = getOrCreateImagesFolder();
   Logger.log("Google Drive เชื่อมต่อสำเร็จ! โฟลเดอร์ ID: " + folder.getId());
+  const testBlob = Utilities.newBlob("OnePiece Tracker Test", "text/plain", "test.txt");
+  const testFile = folder.createFile(testBlob);
+  testFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const testThumb = `https://drive.google.com/thumbnail?id=${testFile.getId()}&sz=w1000`;
+  Logger.log("ทดสอบ Thumbnail URL: " + testThumb);
+  testFile.setTrashed(true);
 }
 
 function doGet(e) {
@@ -51,12 +57,20 @@ function doGet(e) {
           }
         }
         
+        // Normalize any Google Drive URL into public thumbnail endpoint
         if (cardImageUrl.includes('drive.google.com/file/d/')) {
           const driveFileId = cardImageUrl.split('/d/')[1].split('/')[0];
-          cardImageUrl = `https://lh3.googleusercontent.com/d/${driveFileId}`;
+          cardImageUrl = `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1000`;
+        } else if (cardImageUrl.includes('lh3.googleusercontent.com/d/')) {
+          const driveFileId = cardImageUrl.split('/d/')[1].split('/')[0];
+          cardImageUrl = `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1000`;
+        } else if (cardImageUrl.includes('drive.google.com/uc?')) {
+          const idMatch = cardImageUrl.match(/id=([a-zA-Z0-9_-]+)/);
+          if (idMatch && idMatch[1]) {
+            cardImageUrl = `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w1000`;
+          }
         }
         
-        // กรองค่าที่ไม่ใช่ URL รูปภาพออก ป้องกันชื่อการ์ดหลุดมาเป็นรูป
         if (!cardImageUrl.startsWith('http://') && !cardImageUrl.startsWith('https://')) {
           cardImageUrl = '';
         }
@@ -125,7 +139,12 @@ function doPost(e) {
       ];
       
       sheet.getRange(targetRow, START_COLUMN, 1, NUM_COLUMNS).setValues([newCardRow]);
-      return respondJson({ success: true, message: 'บันทึกการ์ดเรียบร้อย', row: targetRow, imageUrl: finalImageUrl });
+      return respondJson({ 
+        success: true, 
+        message: 'บันทึกการ์ดเรียบร้อย', 
+        row: targetRow, 
+        imageUrl: finalImageUrl 
+      });
     }
 
     if (operation === 'edit') {
@@ -155,13 +174,30 @@ function doPost(e) {
         if (cardRecord.sellDate !== undefined) sheet.getRange(targetRow, 9).setValue(cardRecord.sellDate);
         if (cardRecord.sellPrice !== undefined) sheet.getRange(targetRow, 10).setValue(Number(cardRecord.sellPrice));
 
-        return respondJson({ success: true, message: 'แก้ไขข้อมูลการ์ดเรียบร้อย' });
+        return respondJson({ 
+          success: true, 
+          message: 'แก้ไขข้อมูลการ์ดเรียบร้อย',
+          imageUrl: finalImageUrl 
+        });
       }
     }
 
     if (operation === 'delete') {
       const targetRow = Number(postBody.rowId);
       if (targetRow && targetRow >= DATA_START_ROW) {
+        try {
+          const formulaCell = sheet.getRange(targetRow, 2).getFormula();
+          const valueCell = sheet.getRange(targetRow, 2).getValue();
+          const cellContent = formulaCell || String(valueCell || '');
+          if (cellContent.includes('id=')) {
+            const fileIdMatch = cellContent.match(/id=([a-zA-Z0-9_-]+)/);
+            if (fileIdMatch && fileIdMatch[1]) {
+              DriveApp.getFileById(fileIdMatch[1]).setTrashed(true);
+            }
+          }
+        } catch (trashError) {
+          Logger.log("Trash file error: " + trashError.toString());
+        }
         sheet.deleteRow(targetRow);
         return respondJson({ success: true, message: 'ลบการ์ดเรียบร้อยแล้ว' });
       }
@@ -186,7 +222,9 @@ function doPost(e) {
 function getOrCreateImagesFolder() {
   const folderSearch = DriveApp.getFoldersByName('OnePieceCards_Images');
   if (folderSearch.hasNext()) {
-    return folderSearch.next();
+    const existingFolder = folderSearch.next();
+    existingFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return existingFolder;
   }
   const createdFolder = DriveApp.createFolder('OnePieceCards_Images');
   createdFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -203,7 +241,7 @@ function saveImageBlobToDrive(base64Payload) {
     const targetFolder = getOrCreateImagesFolder();
     const createdFile = targetFolder.createFile(fileBlob);
     createdFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return `https://lh3.googleusercontent.com/d/${createdFile.getId()}`;
+    return `https://drive.google.com/thumbnail?id=${createdFile.getId()}&sz=w1000`;
   } catch (driveError) {
     Logger.log("Drive upload error: " + driveError.toString());
     return '';
