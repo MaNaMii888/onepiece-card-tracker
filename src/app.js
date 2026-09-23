@@ -8,6 +8,8 @@ import {
   setCards, 
   setSummary, 
   setFilterStatus, 
+  setFilterSet,
+  setSortOrder,
   setSearchQuery, 
   setViewMode, 
   setActiveSellCard, 
@@ -15,7 +17,9 @@ import {
   setCurrentImageBase64, 
   setEditImageBase64,
   getGeminiApiKey, 
-  setGeminiApiKey 
+  setGeminiApiKey,
+  loadCachedData,
+  saveCachedData
 } from './modules/state.js';
 import { 
   fetchCardsFromSheet, 
@@ -26,8 +30,13 @@ import {
 } from './modules/api.js';
 import { scanCardWithGemini } from './modules/ai.js';
 import { processCardImageFile } from './modules/imageProcessor.js';
-import { showToast, updateKpiDisplay, renderCardsList, fmtMoney } from './modules/ui.js';
-import { aggregateMonthlyMetrics, renderPerformanceComboChart } from './modules/analytics.js';
+import { showToast, updateKpiDisplay, renderCardsList, fmtMoney, updateSyncStatusBadge } from './modules/ui.js';
+import { 
+  aggregateMonthlyMetrics, 
+  renderPerformanceComboChart,
+  aggregateSetDistribution,
+  renderAllocationDonutChart
+} from './modules/analytics.js';
 
 // DOM Elements Cache
 const refreshIcon = document.getElementById('refreshIcon');
@@ -42,13 +51,28 @@ const searchInputElement = document.getElementById('searchInput');
 let currentAnalyticsScope = 6;
 let isAnalyticsSectionOpen = false;
 
-// Load Data from Google Sheet
+// Load Data from Google Sheet with Stale-While-Revalidate Caching
 async function loadSheetData() {
+  const cachedPacket = loadCachedData();
+  const hasCachedContent = cachedPacket && Array.isArray(cachedPacket.cards) && cachedPacket.cards.length > 0;
+
+  if (hasCachedContent) {
+    setCards(cachedPacket.cards);
+    setSummary(cachedPacket.summary || {});
+    updateKpiDisplay();
+    renderCardsList(openSellModal, openEditModal);
+    refreshAnalyticsChart();
+    updateSyncStatusBadge('cached');
+    loadingState.classList.add('hidden');
+  } else {
+    loadingState.classList.remove('hidden');
+    document.getElementById('cardsGrid').classList.add('hidden');
+    document.getElementById('cardsTableWrapper').classList.add('hidden');
+    document.getElementById('emptyState').classList.add('hidden');
+  }
+
   refreshIcon.classList.add('animate-spin');
-  loadingState.classList.remove('hidden');
-  document.getElementById('cardsGrid').classList.add('hidden');
-  document.getElementById('cardsTableWrapper').classList.add('hidden');
-  document.getElementById('emptyState').classList.add('hidden');
+  updateSyncStatusBadge('syncing');
 
   try {
     const sheetResponse = await fetchCardsFromSheet();
@@ -59,14 +83,20 @@ async function loadSheetData() {
       });
       setCards(validCards);
       setSummary(sheetResponse.summary || {});
+      saveCachedData(validCards, sheetResponse.summary || {});
       updateKpiDisplay();
       renderCardsList(openSellModal, openEditModal);
       refreshAnalyticsChart();
+      updateSyncStatusBadge('synced');
     } else {
+      updateSyncStatusBadge(hasCachedContent ? 'cached' : 'error');
       showToast('เกิดข้อผิดพลาด: ' + (sheetResponse.message || 'ไม่สามารถโหลดข้อมูลได้'), 'error');
     }
   } catch (networkError) {
-    showToast('ไม่สามารถเชื่อมต่อ Google Sheets API ได้: ' + networkError.message, 'error');
+    updateSyncStatusBadge(hasCachedContent ? 'error' : 'error');
+    if (!hasCachedContent) {
+      showToast('ไม่สามารถเชื่อมต่อ Google Sheets API ได้: ' + networkError.message, 'error');
+    }
   } finally {
     refreshIcon.classList.remove('animate-spin');
     loadingState.classList.add('hidden');
@@ -75,11 +105,19 @@ async function loadSheetData() {
 
 // Portfolio Analytics Controls
 function refreshAnalyticsChart() {
-  const canvasElement = document.getElementById('performanceChartCanvas');
-  if (!canvasElement || !isAnalyticsSectionOpen) return;
+  if (!isAnalyticsSectionOpen) return;
 
-  const monthlyMetrics = aggregateMonthlyMetrics(store.cards, currentAnalyticsScope);
-  renderPerformanceComboChart(canvasElement, monthlyMetrics);
+  const performanceCanvas = document.getElementById('performanceChartCanvas');
+  if (performanceCanvas) {
+    const monthlyMetrics = aggregateMonthlyMetrics(store.cards, currentAnalyticsScope);
+    renderPerformanceComboChart(performanceCanvas, monthlyMetrics);
+  }
+
+  const allocationCanvas = document.getElementById('allocationChartCanvas');
+  if (allocationCanvas) {
+    const allocationMetrics = aggregateSetDistribution(store.cards);
+    renderAllocationDonutChart(allocationCanvas, allocationMetrics);
+  }
 }
 
 function toggleAnalyticsView() {
@@ -450,6 +488,16 @@ function setView(viewStyle) {
   renderCardsList(openSellModal, openEditModal);
 }
 
+function handleSetFilterChange(chosenSet) {
+  setFilterSet(chosenSet);
+  renderCardsList(openSellModal, openEditModal);
+}
+
+function handleSortOrderChange(chosenSort) {
+  setSortOrder(chosenSort);
+  renderCardsList(openSellModal, openEditModal);
+}
+
 // Event Listeners Setup
 function initEventListeners() {
   // Global Clipboard Paste Listener (Ctrl+V)
@@ -513,6 +561,8 @@ function initEventListeners() {
   window.confirmSellCard = confirmSellCard;
   window.setStatusFilter = setFilter;
   window.setViewMode = setView;
+  window.handleSetFilterChange = handleSetFilterChange;
+  window.handleSortOrderChange = handleSortOrderChange;
   window.toggleAnalyticsView = toggleAnalyticsView;
   window.setAnalyticsTimeScope = setAnalyticsTimeScope;
 }

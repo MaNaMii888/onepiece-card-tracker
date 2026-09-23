@@ -78,11 +78,110 @@ export function updateKpiDisplay() {
   roiElement.className = `font-bold ${netProfitAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
 }
 
+export function updateSyncStatusBadge(statusKey) {
+  const badgeElement = document.getElementById('syncStatusBadge');
+  if (!badgeElement) return;
+
+  const statusConfigs = {
+    syncing: {
+      text: '🔄 กำลังซิงค์...',
+      classes: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
+    },
+    synced: {
+      text: '🟢 ซิงค์ล่าสุดแล้ว',
+      classes: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+    },
+    cached: {
+      text: '⚡ แคชออฟไลน์',
+      classes: 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+    },
+    error: {
+      text: '⚠️ ออฟไลน์ (แคช)',
+      classes: 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+    }
+  };
+
+  const activeConfig = statusConfigs[statusKey] || statusConfigs.syncing;
+  badgeElement.className = `hidden sm:inline-flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border transition ${activeConfig.classes}`;
+  badgeElement.textContent = activeConfig.text;
+}
+
+export function populateSetDropdown(cardRecords) {
+  const setDropdownElement = document.getElementById('filterSetSelect');
+  if (!setDropdownElement) return;
+
+  const currentSelection = store.filterSet || 'all';
+  const uniqueSetNames = new Set();
+
+  cardRecords.forEach(singleCard => {
+    const rawSetName = (singleCard.cardSet || '').trim();
+    if (rawSetName.length > 0) {
+      uniqueSetNames.add(rawSetName);
+    }
+  });
+
+  const sortedSets = Array.from(uniqueSetNames).sort();
+  const optionElements = ['<option value="all">ทุกชุดการ์ด</option>'];
+
+  sortedSets.forEach(setName => {
+    const isSelected = setName === currentSelection ? 'selected' : '';
+    optionElements.push(`<option value="${setName.replace(/"/g, '&quot;')}" ${isSelected}>${setName}</option>`);
+  });
+
+  setDropdownElement.innerHTML = optionElements.join('');
+}
+
+export function sortCardsList(cardsList, sortOrderKey) {
+  const clonedCards = cardsList.slice();
+
+  switch (sortOrderKey) {
+    case 'date_asc':
+      return clonedCards.sort((cardA, cardB) => {
+        const dateA = cardA.buyDate || cardA.sellDate || '';
+        const dateB = cardB.buyDate || cardB.sellDate || '';
+        return dateA.localeCompare(dateB);
+      });
+
+    case 'cost_desc':
+      return clonedCards.sort((cardA, cardB) => {
+        return (Number(cardB.buyPrice) || 0) - (Number(cardA.buyPrice) || 0);
+      });
+
+    case 'cost_asc':
+      return clonedCards.sort((cardA, cardB) => {
+        return (Number(cardA.buyPrice) || 0) - (Number(cardB.buyPrice) || 0);
+      });
+
+    case 'profit_desc':
+      return clonedCards.sort((cardA, cardB) => {
+        const profitA = (Number(cardA.sellPrice) || 0) - (Number(cardA.buyPrice) || 0);
+        const profitB = (Number(cardB.sellPrice) || 0) - (Number(cardB.buyPrice) || 0);
+        return profitB - profitA;
+      });
+
+    case 'date_desc':
+    default:
+      return clonedCards.sort((cardA, cardB) => {
+        const dateA = cardA.buyDate || cardA.sellDate || '';
+        const dateB = cardB.buyDate || cardB.sellDate || '';
+        return dateB.localeCompare(dateA);
+      });
+  }
+}
+
 export function renderCardsList(onOpenSellModal, onOpenEditModal) {
-  const filteredCards = store.cards.filter(singleCard => {
+  populateSetDropdown(store.cards);
+
+  const matchedCards = store.cards.filter(singleCard => {
     const isSold = singleCard.status === 'ขายแล้ว' || singleCard.sellPrice > 0;
     if (store.filterStatus === 'stock' && isSold) return false;
     if (store.filterStatus === 'sold' && !isSold) return false;
+
+    if (store.filterSet !== 'all') {
+      const cardSetName = (singleCard.cardSet || '').trim();
+      if (cardSetName !== store.filterSet) return false;
+    }
+
     if (store.searchQuery) {
       const matchName = (singleCard.cardName || '').toLowerCase().includes(store.searchQuery);
       const matchSet = (singleCard.cardSet || '').toLowerCase().includes(store.searchQuery);
@@ -92,11 +191,12 @@ export function renderCardsList(onOpenSellModal, onOpenEditModal) {
     return true;
   });
 
+  const sortedCards = sortCardsList(matchedCards, store.sortOrder);
   const gridElement = document.getElementById('cardsGrid');
   const tableContainer = document.getElementById('cardsTableWrapper');
   const emptyElement = document.getElementById('emptyState');
 
-  if (filteredCards.length === 0) {
+  if (sortedCards.length === 0) {
     gridElement.classList.add('hidden');
     tableContainer.classList.add('hidden');
     emptyElement.classList.remove('hidden');
@@ -108,12 +208,12 @@ export function renderCardsList(onOpenSellModal, onOpenEditModal) {
   if (store.viewMode === 'grid') {
     tableContainer.classList.add('hidden');
     gridElement.classList.remove('hidden');
-    gridElement.innerHTML = filteredCards.map(singleCard => renderCardGridItem(singleCard)).join('');
+    gridElement.innerHTML = sortedCards.map(singleCard => renderCardGridItem(singleCard)).join('');
   } else {
     gridElement.classList.add('hidden');
     tableContainer.classList.remove('hidden');
     const tableBody = document.getElementById('cardsTableBody');
-    tableBody.innerHTML = filteredCards.map(singleCard => renderCardTableRow(singleCard)).join('');
+    tableBody.innerHTML = sortedCards.map(singleCard => renderCardTableRow(singleCard)).join('');
   }
 
   attachCardActionEvents(onOpenSellModal, onOpenEditModal);

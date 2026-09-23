@@ -160,3 +160,129 @@ export function renderPerformanceComboChart(canvasElement, performanceMetrics) {
 
   performanceChartInstance = new Chart(canvasElement, chartConfiguration);
 }
+
+let allocationDonutInstance = null;
+
+const ALLOCATION_PALETTE = [
+  '#00F0FF',
+  '#10B981',
+  '#F59E0B',
+  '#8B5CF6',
+  '#EC4899',
+  '#64748B'
+];
+
+export function aggregateSetDistribution(cardRecords, maxLimit = 5) {
+  const setBuckets = new Map();
+
+  cardRecords.forEach(singleCard => {
+    const rawSetName = singleCard.cardSet ? singleCard.cardSet.trim() : '';
+    const groupKey = rawSetName.length > 0 ? rawSetName : 'ไม่ระบุชุด';
+    const cardCost = Number(singleCard.buyPrice) || 0;
+
+    if (!setBuckets.has(groupKey)) {
+      setBuckets.set(groupKey, { totalCost: 0, cardCount: 0 });
+    }
+
+    const bucketEntry = setBuckets.get(groupKey);
+    bucketEntry.totalCost += cardCost;
+    bucketEntry.cardCount += 1;
+  });
+
+  const sortedSetEntries = Array.from(setBuckets.entries())
+    .sort((entryA, entryB) => entryB[1].totalCost - entryA[1].totalCost);
+
+  if (sortedSetEntries.length <= maxLimit) {
+    return {
+      labels: sortedSetEntries.map(entry => entry[0]),
+      costValues: sortedSetEntries.map(entry => entry[1].totalCost),
+      cardCounts: sortedSetEntries.map(entry => entry[1].cardCount)
+    };
+  }
+
+  const primaryEntries = sortedSetEntries.slice(0, maxLimit);
+  const remainderEntries = sortedSetEntries.slice(maxLimit);
+
+  let remainderCostSum = 0;
+  let remainderCountSum = 0;
+  remainderEntries.forEach(entry => {
+    remainderCostSum += entry[1].totalCost;
+    remainderCountSum += entry[1].cardCount;
+  });
+
+  const finalLabels = primaryEntries.map(entry => entry[0]).concat(['ชุดอื่นๆ']);
+  const finalCostValues = primaryEntries.map(entry => entry[1].totalCost).concat([remainderCostSum]);
+  const finalCardCounts = primaryEntries.map(entry => entry[1].cardCount).concat([remainderCountSum]);
+
+  return {
+    labels: finalLabels,
+    costValues: finalCostValues,
+    cardCounts: finalCardCounts
+  };
+}
+
+export function renderAllocationDonutChart(canvasElement, allocationMetrics) {
+  if (!canvasElement || typeof Chart === 'undefined') return;
+
+  if (allocationDonutInstance) {
+    allocationDonutInstance.destroy();
+  }
+
+  const hasCapital = allocationMetrics.costValues.some(costNumber => costNumber > 0);
+  const displayValues = hasCapital ? allocationMetrics.costValues : [1];
+  const displayLabels = hasCapital ? allocationMetrics.labels : ['ไม่มีข้อมูลต้นทุน'];
+  const displayPalette = hasCapital ? ALLOCATION_PALETTE.slice(0, displayLabels.length) : ['#334155'];
+
+  const chartConfiguration = {
+    type: 'doughnut',
+    data: {
+      labels: displayLabels,
+      datasets: [
+        {
+          data: displayValues,
+          backgroundColor: displayPalette,
+          borderColor: '#1C2541',
+          borderWidth: 2,
+          hoverOffset: 6
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '70%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#94A3B8',
+            font: { family: 'Prompt', size: 11, weight: '500' },
+            boxWidth: 12,
+            usePointStyle: true
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0B132B',
+          borderColor: '#3A506B',
+          borderWidth: 1,
+          titleColor: '#F8FAFC',
+          bodyColor: '#CBD5E1',
+          titleFont: { family: 'Prompt', size: 12, weight: 'bold' },
+          bodyFont: { family: 'Prompt', size: 11 },
+          padding: 10,
+          callbacks: {
+            label: function(tooltipContext) {
+              const setLabel = tooltipContext.label || '';
+              const costAmount = Number(tooltipContext.parsed || 0);
+              const totalSum = tooltipContext.dataset.data.reduce((acc, curr) => acc + curr, 0);
+              const percentage = totalSum > 0 ? ((costAmount / totalSum) * 100).toFixed(1) : '0';
+              return ` ${setLabel}: ฿${costAmount.toLocaleString('th-TH')} (${percentage}%)`;
+            }
+          }
+        }
+      }
+    }
+  };
+
+  allocationDonutInstance = new Chart(canvasElement, chartConfiguration);
+}
