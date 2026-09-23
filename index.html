@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HEIC/HEIF Converter for iPhone Photos -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -303,7 +305,7 @@
             onclick="document.getElementById('cardFileInput').click()"
             class="border-2 border-dashed border-slate-700 hover:border-cyan-500/80 rounded-xl p-3 text-center cursor-pointer transition bg-slate-900/60 relative focus:outline-none focus:border-cyan-400"
           >
-            <input type="file" id="cardFileInput" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+            <input type="file" id="cardFileInput" accept="image/*,.heic,.heif" class="hidden" onchange="handleFileSelect(event)">
             
             <div id="dropzoneEmpty" class="py-2 space-y-1">
               <span class="text-2xl">📸</span>
@@ -803,14 +805,37 @@ Return STRICT JSON only with this schema:
       if (file) processImageFile(file);
     }
 
-    function processImageFile(file) {
-      if (!file.type.startsWith('image/')) {
-        showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
+    async function processImageFile(file) {
+      let targetFile = file;
+
+      // Check if file is HEIC / HEIF (Apple iPhone default camera format)
+      const isHeic = file.type === 'image/heic' || 
+                     file.type === 'image/heif' || 
+                     file.name?.toLowerCase().endsWith('.heic') || 
+                     file.name?.toLowerCase().endsWith('.heif');
+
+      if (isHeic) {
+        showToast('กำลังแปลงไฟล์รูปภาพ iPhone (HEIC)... ⏳', 'info');
+        try {
+          if (window.heic2any) {
+            const conversionResult = await window.heic2any({
+              blob: file,
+              toType: 'image/jpeg',
+              quality: 0.88
+            });
+            targetFile = Array.isArray(conversionResult) ? conversionResult[0] : conversionResult;
+          }
+        } catch (heicErr) {
+          console.warn('HEIC conversion warning:', heicErr);
+        }
+      } else if (!file.type.startsWith('image/')) {
+        showToast('กรุณาเลือกไฟล์รูปภาพเท่านั้น (JPG, PNG, WebP, HEIC)', 'error');
         return;
       }
+
       const reader = new FileReader();
       reader.onload = function(evt) {
-        // Compress image to ~600px width for fast upload
+        // Compress image to ~800px width for fast upload and AI scanning
         const img = new Image();
         img.onload = function() {
           const canvas = document.createElement('canvas');
@@ -848,7 +873,7 @@ Return STRICT JSON only with this schema:
         };
         img.src = evt.target.result;
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(targetFile);
     }
 
     function clearCardImage() {
