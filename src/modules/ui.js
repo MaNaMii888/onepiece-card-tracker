@@ -102,8 +102,9 @@ export function updateSyncStatusBadge(statusKey) {
   };
 
   const activeConfig = statusConfigs[statusKey] || statusConfigs.syncing;
-  badgeElement.className = `hidden sm:inline-flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border transition ${activeConfig.classes}`;
+  badgeElement.className = `hidden sm:inline-flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full border transition cursor-pointer select-none ${activeConfig.classes}`;
   badgeElement.textContent = activeConfig.text;
+  badgeElement.title = statusKey === 'error' ? 'การเชื่อมต่อชีตขัดข้อง - คลิกเพื่อดูสาเหตุหรือลองใหม่' : 'คลิกเพื่อซิงค์ข้อมูลล่าสุด';
 }
 
 export function populateSetDropdown(cardRecords) {

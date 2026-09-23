@@ -50,6 +50,16 @@ const searchInputElement = document.getElementById('searchInput');
 
 let currentAnalyticsScope = 6;
 let isAnalyticsSectionOpen = false;
+let lastSyncErrorMessage = '';
+
+function showSyncStatusDetails() {
+  if (lastSyncErrorMessage) {
+    showToast(`การเชื่อมต่อขัดข้อง: ${lastSyncErrorMessage} (กดปุ่มรีเฟรชเพื่อลองใหม่)`, 'error');
+  } else {
+    showToast('กำลังตรวจสอบการเชื่อมต่อกับ Google Sheets...', 'info');
+    loadSheetData();
+  }
+}
 
 // Load Data from Google Sheet with Stale-While-Revalidate Caching
 async function loadSheetData() {
@@ -77,6 +87,7 @@ async function loadSheetData() {
   try {
     const sheetResponse = await fetchCardsFromSheet();
     if (sheetResponse.success) {
+      lastSyncErrorMessage = '';
       const validCards = (sheetResponse.cards || []).filter(singleCard => {
         const title = singleCard.cardName;
         return title && title !== 'รูปภาพหน้าการ์ด' && title !== 'ชื่อการ์ด';
@@ -89,14 +100,15 @@ async function loadSheetData() {
       refreshAnalyticsChart();
       updateSyncStatusBadge('synced');
     } else {
-      updateSyncStatusBadge(hasCachedContent ? 'cached' : 'error');
-      showToast('เกิดข้อผิดพลาด: ' + (sheetResponse.message || 'ไม่สามารถโหลดข้อมูลได้'), 'error');
+      lastSyncErrorMessage = sheetResponse.message || 'โครงสร้างข้อมูลตอบกลับไม่ถูกต้อง';
+      updateSyncStatusBadge('error');
+      showToast('เกิดข้อผิดพลาดจาก Google Sheets: ' + lastSyncErrorMessage, 'error');
     }
   } catch (networkError) {
-    updateSyncStatusBadge(hasCachedContent ? 'error' : 'error');
-    if (!hasCachedContent) {
-      showToast('ไม่สามารถเชื่อมต่อ Google Sheets API ได้: ' + networkError.message, 'error');
-    }
+    lastSyncErrorMessage = networkError.message || String(networkError);
+    console.error('OnePieceTracker sync error:', networkError);
+    updateSyncStatusBadge('error');
+    showToast('เชื่อมต่อชีตไม่สำเร็จ (แสดงแคชในเครื่อง): ' + lastSyncErrorMessage, 'error');
   } finally {
     refreshIcon.classList.remove('animate-spin');
     loadingState.classList.add('hidden');
@@ -542,8 +554,15 @@ function initEventListeners() {
     addCardForm.addEventListener('submit', handleFormSubmit);
   }
 
+  // Click on sync badge to check details or retry
+  const syncBadgeElement = document.getElementById('syncStatusBadge');
+  if (syncBadgeElement) {
+    syncBadgeElement.addEventListener('click', showSyncStatusDetails);
+  }
+
   // Expose global actions to window for HTML inline attributes
   window.loadSheetData = loadSheetData;
+  window.showSyncStatusDetails = showSyncStatusDetails;
   window.openAddCardModal = openAddCardModal;
   window.closeAddCardModal = closeAddCardModal;
   window.openEditModal = openEditModal;
