@@ -24,10 +24,19 @@ function doGet(e) {
         const row = data[i];
         if (!row[1]) continue; // ถ้าไม่มีชื่อการ์ดให้ข้าม
         
-        let img = String(row[0] || '');
-        if (!img && formulas[i] && formulas[i][0]) {
+        let img = '';
+        if (formulas[i] && formulas[i][0]) {
           const m = formulas[i][0].match(/=IMAGE\("([^"]+)"\)/i);
           if (m) img = m[1];
+        }
+        if (!img && row[0]) {
+          img = String(row[0]);
+        }
+        
+        // แปลง Google Drive view link เป็น direct thumbnail image URL
+        if (img.includes('drive.google.com/file/d/')) {
+          const fileId = img.split('/d/')[1].split('/')[0];
+          img = `https://lh3.googleusercontent.com/d/${fileId}`;
         }
         
         cards.push({

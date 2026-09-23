@@ -7,6 +7,17 @@ export function fmtMoney(num) {
   return '฿' + Number(num || 0).toLocaleString('th-TH');
 }
 
+export function formatDisplayDate(dateStr) {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+  } catch (e) {}
+  return String(dateStr).split('T')[0];
+}
+
 export function showToast(msg, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
@@ -129,7 +140,7 @@ function renderCardGridItem(c) {
 
         <div class="mt-3 flex gap-3">
           ${c.imageUrl ? `
-            <img src="${c.imageUrl}" alt="${c.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.style.display='none'">
+            <img src="${c.imageUrl}" alt="${c.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\x22http://www.w3.org/2000/svg\x22 width=\x2264\x22 height=\x2288\x22 viewBox=\x220 0 64 88\x22><rect width=\x2264\x22 height=\x2288\x22 fill=\x22%231e293b\x22/><text x=\x2250%25\x22 y=\x2250%25\x22 font-size=\x2224\x22 text-anchor=\x22middle\x22 dominant-baseline=\x22central\x22>🃏</text></svg>';">
           ` : `
             <div class="w-16 h-22 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center text-xl flex-shrink-0 text-slate-600">
               🃏
@@ -139,7 +150,7 @@ function renderCardGridItem(c) {
             <h4 class="text-sm font-bold text-white leading-snug truncate" title="${c.cardName}">${c.cardName}</h4>
             <p class="text-[11px] text-slate-400 truncate mt-0.5">${c.cardSet || '-'}</p>
             <div class="mt-2 text-[11px] text-slate-400">
-              ซื้อ: <span class="text-slate-300">${c.buyDate || '-'}</span>
+              ซื้อ: <span class="text-slate-300">${formatDisplayDate(c.buyDate)}</span>
             </div>
           </div>
         </div>
@@ -191,9 +202,9 @@ function renderCardTableRow(c) {
           ${isSold ? 'ขายแล้ว' : 'มีในสต็อก'}
         </span>
       </td>
-      <td class="py-2.5 px-3 text-slate-400">${c.buyDate || '-'}</td>
+      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(c.buyDate)}</td>
       <td class="py-2.5 px-3 text-right font-medium text-amber-400">${fmtMoney(c.buyPrice)}</td>
-      <td class="py-2.5 px-3 text-slate-400">${c.sellDate || '-'}</td>
+      <td class="py-2.5 px-3 text-slate-400">${formatDisplayDate(c.sellDate)}</td>
       <td class="py-2.5 px-3 text-right font-medium text-blue-400">${c.sellPrice ? fmtMoney(c.sellPrice) : '-'}</td>
       <td class="py-2.5 px-3 text-right font-bold ${profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
         ${isSold ? ((profit >= 0 ? '+' : '') + fmtMoney(profit)) : '-'}
