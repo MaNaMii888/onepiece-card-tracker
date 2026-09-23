@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.env
+scratch/
+test_*.png
+code_*.png
+corner_*.png
+norm.png
+exact_card.png
+lens_result.png
+name_*.png
+user_card_pasted.png
+bottom_*.png
+card_crop_*.png
+google_img_snap.png
