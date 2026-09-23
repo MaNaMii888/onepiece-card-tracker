@@ -1,15 +1,27 @@
 /**
  * One Piece Card Tracker API Backend
  */
-const SHEET_NAME = 'Sheet1';
+const SHEET_NAME = 'onepiece'; // ตรงกับชื่อแท็บในชีตของผู้ใช้
 const DATA_START_ROW = 8;
 const START_COLUMN = 2; // Column B (Column A is reserved spacer in template)
 const NUM_COLUMNS = 11; // Columns B to L (Image, Name, Set, Rarity, Status, BuyDate, BuyPrice, SellDate, SellPrice, Profit, ROI)
 
+function getTargetSheet(spreadsheet) {
+  return spreadsheet.getSheetByName(SHEET_NAME) || 
+         spreadsheet.getSheetByName('Sheet1') || 
+         spreadsheet.getActiveSheet();
+}
+
+// ฟังก์ชันสำหรับกด Run ใน Apps Script ครั้งแรกเพื่อกดยืนยันสิทธิ์ Google Drive (Authorize)
+function authorizeAndTest() {
+  const folder = getOrCreateImagesFolder();
+  Logger.log("Google Drive เชื่อมต่อสำเร็จ! โฟลเดอร์ ID: " + folder.getId());
+}
+
 function doGet(e) {
   try {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.getActiveSheet();
+    const sheet = getTargetSheet(spreadsheet);
     const lastRow = sheet.getLastRow();
     
     const totalCards = sheet.getRange("B4").getValue() || 0;
@@ -30,15 +42,23 @@ function doGet(e) {
         let cardImageUrl = '';
         if (formulaValues[rowIndex] && formulaValues[rowIndex][0]) {
           const formulaMatch = formulaValues[rowIndex][0].match(/=IMAGE\("([^"]+)"\)/i);
-          if (formulaMatch) cardImageUrl = formulaMatch[1];
+          if (formulaMatch) cardImageUrl = formulaMatch[1].trim();
         }
         if (!cardImageUrl && rowCells[0]) {
-          cardImageUrl = String(rowCells[0]);
+          const cellStr = String(rowCells[0]).trim();
+          if (cellStr.startsWith('http://') || cellStr.startsWith('https://')) {
+            cardImageUrl = cellStr;
+          }
         }
         
         if (cardImageUrl.includes('drive.google.com/file/d/')) {
           const driveFileId = cardImageUrl.split('/d/')[1].split('/')[0];
           cardImageUrl = `https://lh3.googleusercontent.com/d/${driveFileId}`;
+        }
+        
+        // กรองค่าที่ไม่ใช่ URL รูปภาพออก ป้องกันชื่อการ์ดหลุดมาเป็นรูป
+        if (!cardImageUrl.startsWith('http://') && !cardImageUrl.startsWith('https://')) {
+          cardImageUrl = '';
         }
         
         cardCollection.push({
@@ -72,7 +92,7 @@ function doPost(e) {
   try {
     const postBody = JSON.parse(e.postData.contents);
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.getActiveSheet();
+    const sheet = getTargetSheet(spreadsheet);
     const operation = postBody.action || 'add';
 
     if (operation === 'add') {
@@ -81,9 +101,12 @@ function doPost(e) {
       const profitFormula = `=IF(J${targetRow}>0, J${targetRow}-H${targetRow}, 0)`;
       const roiFormula = `=IF(H${targetRow}>0, TEXT((J${targetRow}-H${targetRow})/H${targetRow}, "0.0%"), "0.0%")`;
       
-      let finalImageUrl = cardRecord.imageUrl || '';
+      let finalImageUrl = '';
       if (cardRecord.imageBase64 && cardRecord.imageBase64.startsWith('data:image')) {
-        finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64) || finalImageUrl;
+        finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64);
+      }
+      if (!finalImageUrl && cardRecord.imageUrl && (cardRecord.imageUrl.startsWith('http://') || cardRecord.imageUrl.startsWith('https://'))) {
+        finalImageUrl = cardRecord.imageUrl.trim();
       }
 
       const imageFormula = finalImageUrl ? `=IMAGE("${finalImageUrl}")` : '';
@@ -109,14 +132,20 @@ function doPost(e) {
       const targetRow = Number(postBody.rowId);
       const cardRecord = postBody.card;
       if (targetRow && targetRow >= DATA_START_ROW && cardRecord) {
-        let finalImageUrl = cardRecord.imageUrl || '';
+        let finalImageUrl = '';
         if (cardRecord.imageBase64 && cardRecord.imageBase64.startsWith('data:image')) {
-          finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64) || finalImageUrl;
+          finalImageUrl = saveImageBlobToDrive(cardRecord.imageBase64);
+        }
+        if (!finalImageUrl && cardRecord.imageUrl && (cardRecord.imageUrl.startsWith('http://') || cardRecord.imageUrl.startsWith('https://'))) {
+          finalImageUrl = cardRecord.imageUrl.trim();
         }
 
         if (finalImageUrl) {
           sheet.getRange(targetRow, 2).setValue(`=IMAGE("${finalImageUrl}")`);
+        } else if (cardRecord.clearImage) {
+          sheet.getRange(targetRow, 2).setValue('');
         }
+
         if (cardRecord.cardName !== undefined) sheet.getRange(targetRow, 3).setValue(cardRecord.cardName);
         if (cardRecord.cardSet !== undefined) sheet.getRange(targetRow, 4).setValue(cardRecord.cardSet);
         if (cardRecord.rarityCondition !== undefined) sheet.getRange(targetRow, 5).setValue(cardRecord.rarityCondition);
@@ -154,6 +183,16 @@ function doPost(e) {
   }
 }
 
+function getOrCreateImagesFolder() {
+  const folderSearch = DriveApp.getFoldersByName('OnePieceCards_Images');
+  if (folderSearch.hasNext()) {
+    return folderSearch.next();
+  }
+  const createdFolder = DriveApp.createFolder('OnePieceCards_Images');
+  createdFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return createdFolder;
+}
+
 function saveImageBlobToDrive(base64Payload) {
   try {
     const encodedSegments = base64Payload.split(',');
@@ -161,19 +200,12 @@ function saveImageBlobToDrive(base64Payload) {
     const decodedBytes = Utilities.base64Decode(encodedSegments[1]);
     const fileBlob = Utilities.newBlob(decodedBytes, mimeHeader, `card_${Date.now()}.png`);
     
-    let targetFolder;
-    const folderSearch = DriveApp.getFoldersByName('OnePieceCards_Images');
-    if (folderSearch.hasNext()) {
-      targetFolder = folderSearch.next();
-    } else {
-      targetFolder = DriveApp.createFolder('OnePieceCards_Images');
-      targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    }
-    
+    const targetFolder = getOrCreateImagesFolder();
     const createdFile = targetFolder.createFile(fileBlob);
     createdFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     return `https://lh3.googleusercontent.com/d/${createdFile.getId()}`;
   } catch (driveError) {
+    Logger.log("Drive upload error: " + driveError.toString());
     return '';
   }
 }

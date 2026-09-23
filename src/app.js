@@ -257,7 +257,8 @@ function openEditModal(cardRowId) {
 
   const editPreviewElement = document.getElementById('editPreviewImgEl');
   const editStatusElement = document.getElementById('editImageStatusText');
-  if (matchingCard.imageUrl) {
+  const hasValidImage = matchingCard.imageUrl && (matchingCard.imageUrl.startsWith('http://') || matchingCard.imageUrl.startsWith('https://') || matchingCard.imageUrl.startsWith('data:image'));
+  if (hasValidImage) {
     editPreviewElement.src = matchingCard.imageUrl;
     editStatusElement.textContent = 'รูปภาพปัจจุบันจากการ์ด';
   } else {
@@ -295,6 +296,10 @@ function clearEditCardImage() {
   document.getElementById('editCardFileInput').value = '';
   document.getElementById('editPreviewImgEl').src = '';
   document.getElementById('editImageStatusText').textContent = 'ลบรูปภาพแล้ว (กดบันทึกเพื่ออัปเดตชีต)';
+  if (store.activeEditCard) {
+    store.activeEditCard.imageUrl = '';
+    store.activeEditCard.clearImage = true;
+  }
 }
 
 async function handleEditFormSubmit(submitEvent) {
@@ -309,6 +314,8 @@ async function handleEditFormSubmit(submitEvent) {
   submitButton.disabled = true;
   submitButton.innerHTML = '<span>⏳ กำลังบันทึก...</span>';
 
+  const validOriginalUrl = (store.activeEditCard && store.activeEditCard.imageUrl && (store.activeEditCard.imageUrl.startsWith('http://') || store.activeEditCard.imageUrl.startsWith('https://'))) ? store.activeEditCard.imageUrl : '';
+
   const updatedRecord = {
     cardName: document.getElementById('editFormCardName').value.trim(),
     cardSet: document.getElementById('editFormCardSet').value.trim(),
@@ -318,8 +325,9 @@ async function handleEditFormSubmit(submitEvent) {
     buyDate: document.getElementById('editFormBuyDate').value,
     sellPrice: Number(document.getElementById('editFormSellPrice').value) || 0,
     sellDate: document.getElementById('editFormSellDate').value,
-    imageUrl: store.activeEditCard ? store.activeEditCard.imageUrl : '',
-    imageBase64: store.editImageBase64 || ''
+    imageUrl: validOriginalUrl,
+    imageBase64: store.editImageBase64 || '',
+    clearImage: store.activeEditCard?.clearImage || false
   };
 
   try {

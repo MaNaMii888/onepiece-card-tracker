@@ -3,6 +3,8 @@
  */
 import { store } from './state.js';
 
+export const FALLBACK_CARD_SVG = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='88' viewBox='0 0 64 88'%3E%3Crect width='64' height='88' fill='%231e293b'/%3E%3Ctext x='50%25' y='50%25' font-size='24' text-anchor='middle' dominant-baseline='central'%3E🃏%3C/text%3E%3C/svg%3E";
+
 export function fmtMoney(amountNumber) {
   return '฿' + Number(amountNumber || 0).toLocaleString('th-TH');
 }
@@ -137,10 +139,16 @@ function attachCardActionEvents(onOpenSellModal, onOpenEditModal) {
   });
 }
 
+function isValidHttpImage(urlCandidate) {
+  if (!urlCandidate || typeof urlCandidate !== 'string') return false;
+  const clean = urlCandidate.trim();
+  return clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:image');
+}
+
 function renderCardGridItem(cardEntry) {
   const isSold = cardEntry.status === 'ขายแล้ว' || cardEntry.sellPrice > 0;
   const netCardProfit = (Number(cardEntry.sellPrice || 0) - Number(cardEntry.buyPrice || 0));
-  const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="88" viewBox="0 0 64 88"><rect width="64" height="88" fill="%231e293b"/><text x="50%" y="50%" font-size="24" text-anchor="middle" dominant-baseline="central">🃏</text></svg>`;
+  const hasValidImage = isValidHttpImage(cardEntry.imageUrl);
 
   return `
     <div class="bg-[#1C2541] border border-slate-800 hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between transition shadow-lg group">
@@ -157,8 +165,8 @@ function renderCardGridItem(cardEntry) {
         </div>
 
         <div class="mt-3 flex gap-3">
-          ${cardEntry.imageUrl ? `
-            <img src="${cardEntry.imageUrl}" alt="${cardEntry.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.onerror=null; this.src='${fallbackSvg}';">
+          ${hasValidImage ? `
+            <img src="${cardEntry.imageUrl}" alt="${cardEntry.cardName}" class="w-16 h-22 object-cover rounded-lg border border-slate-700 flex-shrink-0" onerror="this.onerror=null; this.src='${FALLBACK_CARD_SVG}';">
           ` : `
             <div class="w-16 h-22 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center text-xl flex-shrink-0 text-slate-600">
               🃏
@@ -216,12 +224,12 @@ function renderCardGridItem(cardEntry) {
 function renderCardTableRow(cardEntry) {
   const isSold = cardEntry.status === 'ขายแล้ว' || cardEntry.sellPrice > 0;
   const netCardProfit = (Number(cardEntry.sellPrice || 0) - Number(cardEntry.buyPrice || 0));
-  const fallbackSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="88" viewBox="0 0 64 88"><rect width="64" height="88" fill="%231e293b"/><text x="50%" y="50%" font-size="24" text-anchor="middle" dominant-baseline="central">🃏</text></svg>`;
+  const hasValidImage = isValidHttpImage(cardEntry.imageUrl);
 
   return `
     <tr class="hover:bg-slate-800/40 transition">
       <td class="py-2.5 px-3">
-        ${cardEntry.imageUrl ? `<img src="${cardEntry.imageUrl}" class="w-8 h-11 object-cover rounded border border-slate-700" onerror="this.src='${fallbackSvg}'">` : '🃏'}
+        ${hasValidImage ? `<img src="${cardEntry.imageUrl}" class="w-8 h-11 object-cover rounded border border-slate-700" onerror="this.onerror=null; this.src='${FALLBACK_CARD_SVG}';">` : '🃏'}
       </td>
       <td class="py-2.5 px-4 font-semibold text-white">${cardEntry.cardName}</td>
       <td class="py-2.5 px-3 text-slate-400">${cardEntry.cardSet || '-'}</td>
